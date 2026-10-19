@@ -30,6 +30,30 @@ returns boolean language sql stable security definer set search_path = public as
   select exists (select 1 from public.profiles where id = auth.uid() and role = 'lecturer');
 $$;
 
+-- ---------- Lecturer invite code ----------
+-- New accounts are students. A lecturer enters the school's invite code to get lecturer access.
+-- See or change the code with:
+--   select value from public.app_settings where key = 'lecturer_invite_code';
+--   update public.app_settings set value = 'your-new-code' where key = 'lecturer_invite_code';
+create table if not exists public.app_settings (key text primary key, value text not null);
+alter table public.app_settings enable row level security;  -- no policies: not readable from the website
+insert into public.app_settings (key, value)
+values ('lecturer_invite_code', 'LECT-' || upper(substr(md5(random()::text), 1, 8)))
+on conflict (key) do nothing;
+
+create or replace function public.claim_lecturer(invite text)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare ok boolean;
+begin
+  if auth.uid() is null or invite is null then return false; end if;
+  select exists (select 1 from public.app_settings where key = 'lecturer_invite_code' and value = trim(invite)) into ok;
+  if ok then update public.profiles set role = 'lecturer' where id = auth.uid(); end if;
+  return ok;
+end;
+$$;
+revoke all on function public.claim_lecturer(text) from public, anon;
+grant execute on function public.claim_lecturer(text) to authenticated;
+
 -- ---------- Classes, boards, attendance ----------
 create table if not exists public.classes (
   code text primary key check (code ~ '^[A-Z0-9]{6}$'),
@@ -43,7 +67,7 @@ create table if not exists public.classes (
 create table if not exists public.class_boards (
   class_code text not null references public.classes(code) on delete cascade,
   room text not null check (room in ('lecture', 'discussion')),
-  kind text not null default 'course' check (kind in ('course', 'pdf', 'images', 'image')),
+  kind text not null default 'course',
   file_paths text[] not null default '{}',
   name text,
   page int not null default 0,
@@ -51,6 +75,10 @@ create table if not exists public.class_boards (
   updated_at timestamptz not null default now(),
   primary key (class_code, room)
 );
+-- Columns and checks added in later versions (safe to re-run)
+alter table public.class_boards add column if not exists media jsonb not null default '{}'::jsonb;
+alter table public.class_boards drop constraint if exists class_boards_kind_check;
+alter table public.class_boards add constraint class_boards_kind_check check (kind in ('course', 'pdf', 'images', 'image', 'video', 'youtube'));
 
 create table if not exists public.attendance (
   class_code text not null references public.classes(code) on delete cascade,
@@ -104,10 +132,10 @@ drop policy if exists "attendance: student updates own" on public.attendance;
 create policy "attendance: student updates own" on public.attendance for update to authenticated
   using (student_id = auth.uid()) with check (student_id = auth.uid());
 
--- ---------- File storage for lecture PDFs, slides and whiteboards ----------
+-- ---------- File storage for lecture PDFs, slides, videos and whiteboards ----------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('lecture-files', 'lecture-files', false, 20971520, array['application/pdf', 'image/png', 'image/jpeg', 'image/webp'])
-on conflict (id) do nothing;
+values ('lecture-files', 'lecture-files', false, 52428800, array['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'video/mp4', 'video/webm'])
+on conflict (id) do update set file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 
 drop policy if exists "lecture-files: signed-in read" on storage.objects;
 create policy "lecture-files: signed-in read" on storage.objects for select to authenticated using (bucket_id = 'lecture-files');
@@ -121,6 +149,8 @@ begin
   begin alter publication supabase_realtime add table public.class_boards; exception when duplicate_object then null; end;
 end $$;
 
--- ---------- Make yourself a lecturer ----------
--- After you create your account on the site, run this with your own email:
--- update public.profiles set role = 'lecturer' where id = (select id from auth.users where email = 'you@example.com');
+-- ---------- Your lecturer invite code ----------
+-- Run this to see it, then give it only to lecturers:
+--   select value from public.app_settings where key = 'lecturer_invite_code';
+-- Or make an existing account a lecturer directly:
+--   update public.profiles set role = 'lecturer' where id = (select id from auth.users where email = 'you@example.com');

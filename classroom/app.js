@@ -8,10 +8,11 @@
 
   // ================= State =================
   const cap = { checked: false };
-  const S = { mode: null, role: 'student', course: COURSES[0], code: null, cls: null, unsubs: [], hand: false, handAt: 0, act: '', log: [], sim: null, lastInput: Date.now(), attendTimer: 0, lecturerId: null };
+  const S = { mode: null, role: 'student', course: COURSES[0], code: null, cls: null, unsubs: [], hand: false, handAt: 0, act: '', log: [], sim: null, lastInput: Date.now(), attendTimer: 0, lecturerId: null, demoRole: 'student' };
   const liveOK = () => !!(window.BE && BE.configured && BE.signedIn);
   const isTeacherView = () => S.mode === 'sim' || (S.mode === 'live' && S.role === 'teacher');
   const canControlBoard = () => S.mode !== 'live' || S.role === 'teacher';
+  const canUpload = () => S.mode === 'sim' || S.role === 'teacher';
 
   // ================= Small UI helpers =================
   let toastTimer = 0;
@@ -30,16 +31,16 @@
   renderer.outputEncoding = THREE.sRGBEncoding;
   stage.append(renderer.domElement);
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#1B2630');
+  scene.background = new THREE.Color('#A9CFE8');
   const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 200);
   camera.rotation.order = 'YXZ';
   scene.add(new THREE.HemisphereLight(0xFFF6E8, 0x40372E, 0.85));
   const sun = new THREE.DirectionalLight(0xFFFFFF, 0.55); sun.position.set(10, 20, 12); scene.add(sun);
   let world = new THREE.Group(); scene.add(world);
   const avatarsGroup = new THREE.Group(); scene.add(avatarsGroup);
-  const W = { clickables: [], boardTex: null, wbTex: null, model: null, modelLabels: [], labelsOn: false, packet: null, packetT: -1, spin: false };
+  const W = { clickables: [], boardTex: null, videoTex: null, screen: null, wbTex: null, model: null, modelLabels: [], labelsOn: false, packet: null, packetT: -1, spin: false };
 
-  const ROOMW = 16, DEPTH = 14, HGT = 4, DOOR = 1.4, DOORH = 2.6;
+  const ROOMW = 16, DEPTH = 14, HGT = 4, DOOR = 1.4, DOORH = 2.6, GROUNDS_Z = 34, MINX_W = -ROOMW / 2, MAXX_W = 3 * ROOMW + ROOMW / 2;
   const mat = (c, o) => new THREE.MeshLambertMaterial(Object.assign({ color: c }, o || {}));
   function box(w, h, d, color, x, y, z, parent) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), typeof color === 'object' ? color : mat(color));
@@ -147,7 +148,17 @@
   async function renderBoard() {
     const token = ++B.renderToken;
     const g = bctx;
+    const isMedia = B.kind === 'video' || B.kind === 'youtube';
     if (B.kind === 'course') drawCourseSlide(g, S.course, Math.min(B.page, S.course.slides.length - 1));
+    else if (isMedia) {
+      g.fillStyle = '#0F1A22'; g.fillRect(0, 0, 1280, 720);
+      g.fillStyle = B.kind === 'youtube' ? '#E62117' : '#F4B740';
+      g.beginPath(); g.moveTo(590, 230); g.lineTo(590, 390); g.lineTo(720, 310); g.closePath(); g.fill();
+      g.fillStyle = '#FFFFFF'; g.textAlign = 'center'; g.textBaseline = 'top';
+      fitFont(g, B.name || 'Video', 1100, 44, 700, '"Atkinson Hyperlegible", sans-serif'); g.fillText(B.name || 'Video', 640, 440);
+      g.font = '400 30px "Atkinson Hyperlegible", sans-serif'; g.fillStyle = '#B8C4CC';
+      g.fillText(B.kind === 'youtube' ? 'YouTube video: click the screen or “Watch the video”' : 'Loading the video…', 640, 500); g.textAlign = 'left';
+    }
     else {
       g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, 1280, 720);
       try {
@@ -174,24 +185,91 @@
       }
     }
     if (token !== B.renderToken) return;
-    // page tag
-    g.fillStyle = 'rgba(22,35,45,0.75)'; g.fillRect(1280 - 150, 720 - 46, 150, 46);
-    g.fillStyle = '#FFFFFF'; g.font = '700 22px "Atkinson Hyperlegible", sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(`${B.page + 1} / ${B.pages}`, 1280 - 75, 720 - 23); g.textAlign = 'left'; g.textBaseline = 'top';
+    if (!isMedia) {
+      g.fillStyle = 'rgba(22,35,45,0.75)'; g.fillRect(1280 - 150, 720 - 46, 150, 46);
+      g.fillStyle = '#FFFFFF'; g.font = '700 22px "Atkinson Hyperlegible", sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(`${B.page + 1} / ${B.pages}`, 1280 - 75, 720 - 23); g.textAlign = 'left'; g.textBaseline = 'top';
+    }
     if (W.boardTex) W.boardTex.needsUpdate = true;
+    setScreenSource();
     if (!$('bvSheet').hidden) paintBoardView();
     updateRoomPanel(true);
   }
   function paintBoardView() {
-    const c = $('bvCanvas'); c.getContext('2d').drawImage(boardCanvas, 0, 0);
+    const media = $('bvMedia'), c = $('bvCanvas');
+    const isVid = B.kind === 'video' && !!B.video, isYt = B.kind === 'youtube' && !!B.yt;
+    c.hidden = isVid || isYt; media.hidden = !(isVid || isYt);
+    if (isVid) { if (B.video.parentNode !== media) { media.textContent = ''; delete media.dataset.yt; media.append(B.video); } B.video.controls = canControlBoard(); }
+    else if (isYt) {
+      if (media.dataset.yt !== B.yt) {
+        media.textContent = ''; const f = document.createElement('iframe');
+        f.src = 'https://www.youtube-nocookie.com/embed/' + B.yt + '?rel=0'; f.title = 'YouTube video';
+        f.allow = 'accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen'; f.allowFullscreen = true; f.referrerPolicy = 'strict-origin-when-cross-origin';
+        media.append(f); media.dataset.yt = B.yt;
+      }
+    } else { media.textContent = ''; delete media.dataset.yt; c.getContext('2d').drawImage(boardCanvas, 0, 0); }
     $('bvTitle').textContent = B.kind === 'course' ? `${S.course.code}: course slides` : B.name;
-    $('bvPage').textContent = `Slide ${B.page + 1} of ${B.pages}`;
+    $('bvPage').textContent = isVid ? 'Video' : isYt ? 'YouTube' : `Slide ${B.page + 1} of ${B.pages}`;
     const ctr = $('bvCtrls'); ctr.textContent = '';
-    if (canControlBoard()) {
+    if (isVid) {
+      if (canControlBoard()) {
+        const p = el('button', 'btn', B.video.paused ? '▶ Play' : '❚❚ Pause'); p.type = 'button'; p.onclick = () => { videoCmd('toggle'); setTimeout(paintBoardView, 120); };
+        const b10 = el('button', 'btn alt', '−10 s'); b10.type = 'button'; b10.onclick = () => videoCmd(-10);
+        const f10 = el('button', 'btn alt', '+10 s'); f10.type = 'button'; f10.onclick = () => videoCmd(10);
+        ctr.append(p, b10, f10);
+      } else ctr.append(el('span', 'muted', 'Playback follows the lecturer.'));
+      if (B.video.muted) { const snd = el('button', 'btn alt', 'Turn sound on'); snd.type = 'button'; snd.onclick = () => { B.video.muted = false; paintBoardView(); updateRoomPanel(true); }; ctr.append(snd); }
+    } else if (isYt) ctr.append(el('span', 'muted', S.mode === 'live' ? 'Each person controls their own YouTube playback.' : ''));
+    else if (canControlBoard()) {
       const p = el('button', 'btn alt', '◀ Previous'); p.type = 'button'; p.onclick = () => setPage(B.page - 1);
       const n = el('button', 'btn', 'Next ▶'); n.type = 'button'; n.onclick = () => setPage(B.page + 1);
       ctr.append(p, n);
     } else ctr.append(el('span', 'muted', 'Your board follows the lecturer’s slides.'));
     const c2 = el('button', 'btn alt', 'Close'); c2.type = 'button'; c2.onclick = closeSheet; ctr.append(c2);
+  }
+
+  // ---------- Video on the lecture screen ----------
+  function setScreenSource() {
+    if (!W.screen) return;
+    const useVid = B.kind === 'video' && W.videoTex && B.video && B.video.readyState >= 2;
+    const m = useVid ? W.videoTex : W.boardTex;
+    if (W.screen.material.map !== m) { W.screen.material.map = m; W.screen.material.needsUpdate = true; }
+  }
+  function clearVideo() {
+    if (B.video) { try { B.video.pause(); } catch (e) {} B.video.removeAttribute('src'); try { B.video.load(); } catch (e) {} if (B.video.parentNode) B.video.remove(); B.video = null; }
+    if (W.videoTex) { W.videoTex.dispose(); W.videoTex = null; }
+    B.yt = null; setScreenSource();
+  }
+  function setupVideo(url) {
+    if (B.video) { try { B.video.pause(); } catch (e) {} B.video.remove(); }
+    const v = document.createElement('video');
+    v.playsInline = true; v.preload = 'auto'; v.muted = true;
+    if (!/^blob:/.test(url)) v.crossOrigin = 'anonymous';
+    v.style.cssText = 'width:100%;border-radius:10px;background:#000;display:block';
+    v.src = url;
+    const tex = new THREE.VideoTexture(v); tex.encoding = THREE.sRGBEncoding;
+    if (W.videoTex) W.videoTex.dispose();
+    W.videoTex = tex; B.video = v;
+    const sync = () => {
+      B.media = { playing: !v.paused, time: v.currentTime, at: Date.now() };
+      if (S.mode === 'live' && S.role === 'teacher') writeBoard({ media: B.media });
+      updateRoomPanel(true);
+    };
+    v.addEventListener('play', sync); v.addEventListener('pause', sync); v.addEventListener('seeked', () => { if (S.role === 'teacher' || S.mode !== 'live') sync(); });
+    v.addEventListener('loadeddata', () => { setScreenSource(); if (S.mode === 'live' && S.role !== 'teacher') syncVideo(B.media); updateRoomPanel(true); });
+    v.addEventListener('error', () => toast('The video could not be played. Try an MP4 file.'));
+    return v;
+  }
+  function videoCmd(cmd) {
+    const v = B.video; if (!v) return;
+    if (cmd === 'toggle') { if (v.paused) { v.play().catch(() => toast('Press play again to start the video.')); setAct('Playing the video'); } else { v.pause(); setAct('Paused the video'); } }
+    else { v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + cmd)); }
+  }
+  function syncVideo(m) {
+    const v = B.video; if (!v || !m) return;
+    const exp = (Number(m.time) || 0) + (m.playing ? Math.max(0, (Date.now() - (Number(m.at) || Date.now())) / 1000) : 0);
+    if (isFinite(exp) && Math.abs(v.currentTime - exp) > 1.5) { try { v.currentTime = exp; } catch (e) {} }
+    if (m.playing && v.paused) v.play().catch(() => {});
+    if (!m.playing && !v.paused) v.pause();
   }
 
   // ---------- Whiteboard layers ----------
@@ -211,6 +289,7 @@
     { key: 'lab', name: S.course.labName, spawn: [16, 5.0, 0] },
     { key: 'library', name: 'Library', spawn: [32, 4.6, 0] },
     { key: 'discussion', name: 'Discussion room', spawn: [48, 5.2, 0] },
+    { key: 'grounds', name: 'School grounds', spawn: [24, 10.5, Math.PI] },
   ];
   function buildWorld(course) {
     scene.remove(world); disposeTree(world);
@@ -224,7 +303,12 @@
       box(ROOMW, 0.1, DEPTH, '#F1EEE8', cx, HGT + 0.05, 0);
       const wm = mat(course.walls[i]);
       box(ROOMW, HGT, 0.2, wm, cx, HGT / 2, -DEPTH / 2);
-      box(ROOMW, HGT, 0.2, wm, cx, HGT / 2, DEPTH / 2);
+      const segW = ROOMW / 2 - DOOR;
+      box(segW, HGT, 0.2, wm, cx - (DOOR + segW / 2), HGT / 2, DEPTH / 2);
+      box(segW, HGT, 0.2, wm, cx + (DOOR + segW / 2), HGT / 2, DEPTH / 2);
+      box(DOOR * 2, HGT - DOORH, 0.2, wm, cx, DOORH + (HGT - DOORH) / 2, DEPTH / 2);
+      box(DOOR * 2 + 0.2, 0.12, 0.26, '#5B4636', cx, DOORH, DEPTH / 2);
+      wallText(r.name, cx, 3.3, DEPTH / 2 + 0.12, 2.4);
       for (const lx of [-4, 4]) box(2.4, 0.06, 0.5, new THREE.MeshBasicMaterial({ color: 0xFFFBEF }), cx + lx, HGT - 0.02, 0);
       wallText(r.name, cx, 3.62, -DEPTH / 2 + 0.12, 2.6);
       box(ROOMW, 0.12, 0.05, course.accent, cx, 3.2 - 0.02, DEPTH / 2 - 0.12); // accent stripe on back wall
@@ -242,7 +326,7 @@
     box(5.9, 3.4, 0.12, '#20262B', 0, 1.85, -DEPTH / 2 + 0.16);
     const bt = new THREE.CanvasTexture(boardCanvas); bt.encoding = THREE.sRGBEncoding; bt.anisotropy = 4; W.boardTex = bt;
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 3.15), new THREE.MeshBasicMaterial({ map: bt }));
-    screen.position.set(0, 1.85, -DEPTH / 2 + 0.24); world.add(screen);
+    screen.position.set(0, 1.85, -DEPTH / 2 + 0.24); world.add(screen); W.screen = screen;
     screen.userData.action = () => openBoardView(); W.clickables.push(screen);
     box(0.9, 1.15, 0.6, '#5B4636', -4.6, 0.575, -5.2); box(1.0, 0.06, 0.7, '#6E5643', -4.6, 1.2, -5.2);
     for (const z of [-1.6, 0.8, 3.2]) for (const x of [-4.8, -1.6, 1.6, 4.8]) {
@@ -301,6 +385,51 @@
     board.position.set(D, 1.8, -DEPTH / 2 + 0.23); world.add(board);
     board.userData.action = () => openSheet('wbSheet'); W.clickables.push(board);
     paintBoardWB();
+    buildGrounds(course);
+  }
+  function tree(x, z, s) {
+    s = s || 1;
+    cyl(0.12 * s, 0.18 * s, 1.6 * s, '#6B4A2F', x, 0.8 * s, z, 8);
+    sph(1.0 * s, '#3F7D3A', x, 2.1 * s, z); sph(0.7 * s, '#4C8F43', x + 0.4 * s, 2.6 * s, z + 0.2 * s);
+  }
+  function buildGrounds(course) {
+    const Z0 = DEPTH / 2, Z1 = GROUNDS_Z, cxG = (MINX_W + MAXX_W) / 2, wG = MAXX_W - MINX_W;
+    box(wG, 0.1, Z1 - Z0, '#7DB35A', cxG, -0.05, (Z0 + Z1) / 2);
+    box(wG, 0.12, 2.2, '#D8C7A0', cxG, 0.0, Z0 + 2.2);                      // path along the building
+    box(2.4, 0.12, Z1 - Z0 - 3.3, '#D8C7A0', 24, 0.0, (Z0 + 3.3 + Z1) / 2); // path to the gate
+    // fence
+    for (const [x, z, w, d] of [[cxG, Z1, wG, 0.12], [MINX_W, (Z0 + Z1) / 2, 0.12, Z1 - Z0], [MAXX_W, (Z0 + Z1) / 2, 0.12, Z1 - Z0]]) { box(w, 1.0, d, '#E8E2D6', x, 0.5, z); }
+    // gate and sign
+    for (const gx of [21.8, 26.2]) box(0.5, 2.4, 0.5, '#8A6748', gx, 1.2, Z1);
+    const sign = wallText('Interactive 3D Campus', 24, 3.0, Z1 - 0.1, 5.2, { bg: '#22303A', fg: '#F4B740' }); sign.rotation.y = Math.PI;
+    // football pitch
+    const PX = 11, PZ = 23, PW = 16, PD = 13;
+    box(PW, 0.02, PD, '#6FAE4C', PX, 0.01, PZ);
+    const line = (w, d, x, z) => box(w, 0.02, d, '#FFFFFF', x, 0.03, z);
+    line(PW, 0.08, PX, PZ - PD / 2); line(PW, 0.08, PX, PZ + PD / 2); line(0.08, PD, PX - PW / 2, PZ); line(0.08, PD, PX + PW / 2, PZ); line(PW, 0.08, PX, PZ);
+    for (const gz of [PZ - PD / 2, PZ + PD / 2]) { cyl(0.05, 0.05, 1.6, '#FFFFFF', PX - 1.6, 0.8, gz, 8); cyl(0.05, 0.05, 1.6, '#FFFFFF', PX + 1.6, 0.8, gz, 8); const bar = cyl(0.05, 0.05, 3.2, '#FFFFFF', PX, 1.6, gz, 8); bar.rotation.z = Math.PI / 2; }
+    sph(0.14, '#FFFFFF', PX + 1.2, 0.14, PZ - 1);
+    // playground
+    const QX = 38, QZ = 22;
+    box(10, 0.04, 10, '#C9B48A', QX, 0.02, QZ);
+    // swings
+    for (const sx of [QX - 3.6, QX - 0.4]) { stick([sx, 0, QZ - 3.5], [sx, 2.4, QZ - 3], 0.06, '#C0392B'); stick([sx, 0, QZ - 2.5], [sx, 2.4, QZ - 3], 0.06, '#C0392B'); }
+    const topBar = cyl(0.06, 0.06, 3.2, '#C0392B', QX - 2, 2.4, QZ - 3, 8); topBar.rotation.z = Math.PI / 2;
+    for (const sx of [QX - 2.8, QX - 1.2]) { stick([sx - 0.2, 2.4, QZ - 3], [sx - 0.2, 0.6, QZ - 3], 0.015, '#3B3F44'); stick([sx + 0.2, 2.4, QZ - 3], [sx + 0.2, 0.6, QZ - 3], 0.015, '#3B3F44'); box(0.55, 0.06, 0.3, '#2F5D7C', sx, 0.58, QZ - 3); }
+    // slide
+    box(1.2, 1.6, 1.2, '#F4B740', QX + 2.6, 0.8, QZ - 2.6);
+    const sl = box(0.8, 0.08, 3.2, '#2F8FCF', QX + 2.6, 0.85, QZ - 0.6); sl.rotation.x = -0.5;
+    for (let k = 0; k < 4; k++) box(0.8, 0.06, 0.1, '#8A6748', QX + 2.6, 0.3 + k * 0.4, QZ - 3.25);
+    // roundabout and sandpit
+    cyl(1.1, 1.1, 0.12, '#81B29A', QX - 2, 0.35, QZ + 2.4, 24); cyl(0.08, 0.08, 1.0, '#3B3F44', QX - 2, 0.75, QZ + 2.4, 8);
+    box(2.6, 0.18, 2.6, '#E8D6A8', QX + 2.6, 0.09, QZ + 2.6);
+    // flagpole
+    const FX = 20, FZ = Z0 + 4.6;
+    cyl(0.06, 0.08, 6, '#C9CED2', FX, 3, FZ, 8);
+    box(0.42, 0.9, 0.04, '#008751', FX + 0.35, 5.4, FZ); box(0.42, 0.9, 0.04, '#FFFFFF', FX + 0.77, 5.4, FZ); box(0.42, 0.9, 0.04, '#008751', FX + 1.19, 5.4, FZ);
+    // benches and trees
+    for (const bx of [28, 32, 46]) { box(1.6, 0.08, 0.45, '#8A6748', bx, 0.45, Z0 + 4.2); box(1.6, 0.4, 0.06, '#8A6748', bx, 0.7, Z0 + 4.4); box(0.08, 0.45, 0.4, '#3B3F44', bx - 0.7, 0.22, Z0 + 4.2); box(0.08, 0.45, 0.4, '#3B3F44', bx + 0.7, 0.22, Z0 + 4.2); }
+    for (const [tx, tz, s] of [[-5.5, 12, 1.1], [-5.5, 20, 1], [-5.5, 28, 1.2], [19.5, 31.5, 1], [28.5, 31.5, 1.1], [48, 16, 0.9], [53.5, 12, 1.1], [53.5, 26, 1], [47, 30, 1.2], [2, 31.5, 0.9]]) tree(tx, tz, s);
   }
   function benchItem(kind, x, y, z) {
     if (kind === 'beaker') { cyl(0.12, 0.12, 0.3, mat('#9FD3EE', { transparent: true, opacity: 0.55 }), x, y + 0.15, z); cyl(0.1, 0.1, 0.12, '#3D8FD1', x, y + 0.06, z); }
@@ -372,10 +501,16 @@
   const pos = new THREE.Vector3(0, 1.6, 5.6);
   let yaw = 0, pitch = -0.05;
   const keys = {}, pad = {};
-  const MINX = -ROOMW / 2 + 0.5, MAXX = 3 * ROOMW + ROOMW / 2 - 0.5, MINZ = -DEPTH / 2 + 0.5, MAXZ = DEPTH / 2 - 0.5;
+  const MINX = -ROOMW / 2 + 0.5, MAXX = 3 * ROOMW + ROOMW / 2 - 0.5, MINZ = -DEPTH / 2 + 0.5, MAXZ = GROUNDS_Z - 0.6;
   function clampMove(p, dx, dz) {
     let nx = Math.min(MAXX, Math.max(MINX, p.x + dx));
-    const nz = Math.min(MAXZ, Math.max(MINZ, p.z + dz));
+    let nz = Math.min(MAXZ, Math.max(MINZ, p.z + dz));
+    const BACK = DEPTH / 2;
+    if ((p.z - BACK) * (nz - BACK) <= 0 || Math.abs(nz - BACK) < 0.35) {
+      const inDoor = [0, 1, 2, 3].some(i => Math.abs(nx - i * ROOMW) < DOOR - 0.35);
+      if (!inDoor) nz = p.z < BACK ? Math.min(nz, BACK - 0.35) : Math.max(nz, BACK + 0.35);
+    }
+    if (nz > BACK + 0.2 || p.z > BACK + 0.2) { p.x = nx; p.z = nz; return; }
     for (let i = 0; i < 3; i++) {
       const wx = i * ROOMW + ROOMW / 2;
       const crossing = (p.x - wx) * (nx - wx) <= 0 || Math.abs(nx - wx) < 0.35;
@@ -383,7 +518,7 @@
     }
     p.x = nx; p.z = nz;
   }
-  const roomOf = x => Math.min(3, Math.max(0, Math.floor((x + ROOMW / 2) / ROOMW)));
+  const roomOf = (x, z) => (z > DEPTH / 2 ? 4 : Math.min(3, Math.max(0, Math.floor((x + ROOMW / 2) / ROOMW))));
   function goRoom(i) { const r = ROOMS()[i]; pos.set(r.spawn[0], 1.6, r.spawn[1]); yaw = r.spawn[2]; pitch = -0.05; }
   const uiBlocked = () => !$('lobby').hidden || !!openId;
   addEventListener('keydown', e => {
@@ -441,7 +576,7 @@
   addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
   $('aboutBtn').addEventListener('click', () => openSheet('aboutSheet'));
   $('aboutBtn2').addEventListener('click', () => openSheet('aboutSheet'));
-  function openBoardView() { openSheet('bvSheet'); paintBoardView(); setAct(`Viewing slide ${B.page + 1} on the board`); }
+  function openBoardView() { openSheet('bvSheet'); paintBoardView(); setAct(B.kind === 'video' ? 'Watching the video' : B.kind === 'youtube' ? 'Watching the YouTube video' : `Viewing slide ${B.page + 1} on the board`); }
 
   // ================= Board control =================
   let boardWriting = false, boardPending = null;
@@ -458,12 +593,13 @@
     } catch (e) { toast('The board could not be updated for students. Check your connection.'); }
     boardWriting = false;
   }
-  function boardDocBody() { return { kind: B.kind, filePaths: B.assetIds || [], name: B.name, page: B.page, pages: B.pages }; }
+  function boardDocBody() { return { kind: B.kind, filePaths: B.assetIds || [], name: B.name, page: B.page, pages: B.pages, media: B.media || {} }; }
   function setPage(n) {
     n = Math.max(0, Math.min(B.pages - 1, n)); if (n === B.page) return;
     B.page = n; renderBoard(); writeBoard({ page: n }); setAct(`Showing slide ${n + 1} on the board`);
   }
   function useCourseSlides(share) {
+    clearVideo();
     B.kind = 'course'; B.pdf = null; B.images = []; B.assetIds = []; B.key = 'course'; B.name = 'Course slides'; B.page = 0; B.pages = S.course.slides.length;
     renderBoard();
     if (share) writeBoard({ kind: 'course', filePaths: [], name: 'Course slides', page: 0, pages: B.pages });
@@ -473,6 +609,12 @@
   async function handleFiles(files) {
     const st = $('upStatus');
     files = Array.from(files || []); if (!files.length) return;
+    const vid = files.find(f => /^video\/(mp4|webm)$/.test(f.type) || /\.(mp4|webm)$/i.test(f.name));
+    if (vid) return handleVideo(vid);
+    if (files.some(f => /\.(pptx?|ppsx?|key|odp)$/i.test(f.name)) && !files.some(f => /\.pdf$/i.test(f.name))) {
+      st.textContent = 'PowerPoint files can’t be shown in a browser directly, so save it as a PDF first. In PowerPoint: File → Save As (or Export) → PDF. In Google Slides: File → Download → PDF. Then choose the PDF here.';
+      return;
+    }
     const pdf = files.find(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
     const imgs = files.filter(f => /^image\/(png|jpeg|webp)$/.test(f.type)).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).slice(0, 40);
     if (!pdf && !imgs.length) { st.textContent = 'That file type isn’t supported. Choose a PDF, or PNG or JPG images. For PowerPoint, save as PDF first.'; return; }
@@ -487,6 +629,7 @@
         const doc = await loadPdfData(buf.slice(0));
         let ids = [];
         if (share) { st.textContent = 'Uploading for your students…'; ids = [await BE.uploadFile(S.code, pdf)]; }
+        clearVideo();
         Object.assign(B, { kind: 'pdf', pdf: doc, images: [], assetIds: ids, key: 'pdf:' + (ids[0] || pdf.name + pdf.size), name: pdf.name.replace(/\.pdf$/i, ''), page: 0, pages: doc.numPages });
       } else {
         st.textContent = `Opening ${imgs.length} image${imgs.length > 1 ? 's' : ''}…`;
@@ -495,6 +638,7 @@
           const url = URL.createObjectURL(imgs[i]); ims.push(await loadImageURL(url));
           if (share) { st.textContent = `Uploading slide ${i + 1} of ${imgs.length}…`; ids.push(await BE.uploadFile(S.code, imgs[i])); }
         }
+        clearVideo();
         Object.assign(B, { kind: 'images', pdf: null, images: ims, assetIds: ids, key: 'img:' + (ids.join(',') || imgs.map(f => f.name).join(',')), name: imgs.length === 1 ? imgs[0].name : `${imgs.length} slides`, page: 0, pages: ims.length });
       }
       await renderBoard();
@@ -512,6 +656,40 @@
         : 'That file could not be opened. Check that it is a PDF or an image and try again.';
     }
   }
+  async function handleVideo(file) {
+    const st = $('upStatus');
+    if (file.size > 50 * 1024 * 1024) { st.textContent = `${file.name} is larger than 50 MB. Shorten or compress it, or put it on YouTube and paste the link below.`; return; }
+    const share = S.mode === 'live' && S.role === 'teacher';
+    try {
+      let path = null;
+      if (share) { st.textContent = 'Uploading the video for your students. This can take a minute…'; path = await BE.uploadFile(S.code, file); }
+      clearVideo();
+      const name = file.name.replace(/\.(mp4|webm)$/i, '');
+      Object.assign(B, { kind: 'video', pdf: null, images: [], assetIds: path ? [path] : [], key: 'vid:' + (path || file.name + file.size), name, page: 0, pages: 1, media: { playing: false, time: 0, at: Date.now() } });
+      setupVideo(URL.createObjectURL(file));
+      await renderBoard();
+      if (share) await writeBoard(boardDocBody());
+      st.textContent = ''; closeSheet();
+      toast(share ? 'The video is on the screen for everyone. Press Play when you’re ready.' : 'The video is on the screen. Press Play when you’re ready.');
+      setAct(`Put the video “${name}” on the screen`);
+    } catch (e) { st.textContent = 'The video could not be uploaded: ' + ((e && e.message) || 'try a smaller MP4 file') + '.'; }
+  }
+  function parseYouTube(u) {
+    u = String(u || '').trim();
+    const m = u.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : (/^[A-Za-z0-9_-]{11}$/.test(u) ? u : null);
+  }
+  async function handleYouTube(link) {
+    const st = $('upStatus'); const id = parseYouTube(link);
+    if (!id) { st.textContent = 'That doesn’t look like a YouTube link. On YouTube, click Share and copy the link.'; return; }
+    clearVideo();
+    Object.assign(B, { kind: 'youtube', pdf: null, images: [], assetIds: [id], key: 'yt:' + id, name: 'YouTube video', page: 0, pages: 1, yt: id });
+    await renderBoard();
+    if (S.mode === 'live' && S.role === 'teacher') await writeBoard(boardDocBody());
+    st.textContent = ''; $('ytLink').value = ''; closeSheet();
+    toast('YouTube video added. Click the screen to watch it.'); setAct('Put a YouTube video on the board');
+  }
+  $('ytForm').addEventListener('submit', e => { e.preventDefault(); handleYouTube($('ytLink').value); });
   $('fileIn').addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; });
   $('useCourseSlides').addEventListener('click', () => { const share = S.mode === 'live' && S.role === 'teacher'; useCourseSlides(share); closeSheet(); toast('Showing the course slides.'); setAct('Switched the board to the course slides'); });
   function openUpload() {
@@ -524,20 +702,24 @@
   async function applyBoardDoc(d) {
     if (!d) return;
     const paths = d.filePaths || [];
-    const key = d.kind === 'course' ? 'course' : (d.kind === 'pdf' ? 'pdf:' : 'img:') + paths.join(d.kind === 'pdf' ? '' : ',');
+    const key = d.kind === 'course' ? 'course' : d.kind === 'youtube' ? 'yt:' + (paths[0] || '') : d.kind === 'video' ? 'vid:' + (paths[0] || '') : (d.kind === 'pdf' ? 'pdf:' : 'img:') + paths.join(d.kind === 'pdf' ? '' : ',');
     if (key !== B.key) {
       if (d.kind === 'course') { useCourseSlides(false); }
+      else if (d.kind === 'youtube') { clearVideo(); Object.assign(B, { kind: 'youtube', pdf: null, images: [], assetIds: paths, key, name: d.name || 'YouTube video', page: 0, pages: 1, yt: parseYouTube(paths[0]) }); }
       else if (B.loadingKey !== key) {
+        clearVideo();
         B.loadingKey = key; Object.assign(B, { kind: d.kind, pdf: null, images: [], assetIds: paths, key, name: d.name || 'Lecture material', pages: d.pages || 1 });
         renderBoard();
         try {
-          if (d.kind === 'pdf') { const r = await fetch(await BE.fileUrl(paths[0])); if (!r.ok) throw new Error('fetch'); const doc = await loadPdfData(await r.arrayBuffer()); if (B.key === key) { B.pdf = doc; B.pages = doc.numPages; } }
+          if (d.kind === 'video') { const url = await BE.fileUrl(paths[0]); if (B.key === key) { B.media = d.media || {}; setupVideo(url); } }
+          else if (d.kind === 'pdf') { const r = await fetch(await BE.fileUrl(paths[0])); if (!r.ok) throw new Error('fetch'); const doc = await loadPdfData(await r.arrayBuffer()); if (B.key === key) { B.pdf = doc; B.pages = doc.numPages; } }
           else { const ims = await Promise.all(paths.map(async p => loadImageURL(await BE.fileUrl(p)))); if (B.key === key) { B.images = ims; B.pages = ims.length; } }
         } catch (e) { if (S.role !== 'teacher') toast('The lecturer’s material could not be loaded on your screen.'); }
         B.loadingKey = null;
       }
     }
     B.page = Math.max(0, Math.min((B.pages || 1) - 1, Number(d.page) || 0));
+    if (d.kind === 'video' && S.role !== 'teacher') { B.media = d.media || {}; syncVideo(B.media); }
     renderBoard();
   }
 
@@ -625,7 +807,7 @@
   function pub(patch) { if (S.cls) S.cls.presence(patch).catch(() => {}); }
   function pubPosition(now, force) {
     if (!S.cls) return;
-    const room = ROOM_KEYS[roomOf(pos.x)];
+    const room = ROOM_KEYS[roomOf(pos.x, pos.z)];
     const moved = Math.abs(pos.x - lastPub.x) + Math.abs(pos.z - lastPub.z) > 0.05 || Math.abs(yaw - lastPub.yaw) > 0.05 || room !== lastPub.room;
     if (!force && (!moved || now - lastPosPub < 250)) return;
     lastPosPub = now; lastPub = { x: pos.x, z: pos.z, yaw, room };
@@ -703,9 +885,14 @@
     showHud(); logMine(`Opened a simulated ${course.code} class`);
     toast('Simulated class: these students are made up, to preview the lecturer’s view.', 6000);
   }
-  function randSpot(room) { const cx = room * ROOMW; return [cx + (Math.random() * 10 - 5), Math.random() * 7 - 2.5]; }
+  function randSpot(room) { if (room === 4) return [2 + Math.random() * 42, 11 + Math.random() * 18]; const cx = room * ROOMW; return [cx + (Math.random() * 10 - 5), Math.random() * 7 - 2.5]; }
   function routeTo(b, room) {
-    const path = []; let cur = roomOf(b.x);
+    const path = []; let cur = roomOf(b.x, b.z);
+    if (cur !== room && (room === 4 || cur === 4)) {
+      const via = room === 4 ? cur : room, cx = via * ROOMW;
+      if (room === 4) path.push([cx, DEPTH / 2 - 1.5], [cx, DEPTH / 2 + 1.5]); else path.push([cx, DEPTH / 2 + 1.5], [cx, DEPTH / 2 - 1.5]);
+      cur = room;
+    }
     while (cur !== room) { const step = room > cur ? 1 : -1; const wx = cur * ROOMW + (step > 0 ? ROOMW / 2 : -ROOMW / 2); path.push([wx - step * 0.8, 0], [wx + step * 0.8, 0]); cur += step; }
     path.push(randSpot(room)); b.path = path; b.roomIdx = room;
   }
@@ -714,7 +901,8 @@
     const opts = r === 0 ? [`Viewing slide ${B.page + 1} on the board`, 'Watching the board', 'Taking notes']
       : r === 1 ? ['Labelling the lab model', 'Looking at the lab model']
       : r === 2 ? c.examples.map(q => `Asked the library: “${q}”`)
-      : ['Drawing on the whiteboard', 'Reading the discussion question'];
+      : r === 3 ? ['Drawing on the whiteboard', 'Reading the discussion question']
+      : ['Playing football', 'On the swings', 'Chatting on a bench', 'Walking around the grounds'];
     return opts[Math.floor(Math.random() * opts.length)];
   }
   function simTick(dt, now) {
@@ -729,7 +917,7 @@
       if (now > b.next) {
         b.next = now + 4000 + Math.random() * 7000;
         const r = Math.random();
-        if (r < 0.22) { routeTo(b, Math.floor(Math.random() * 4)); b.act = 'Walking to the ' + ROOMS()[b.roomIdx].name.toLowerCase(); }
+        if (r < 0.22) { routeTo(b, Math.floor(Math.random() * 5)); b.act = 'Walking to the ' + ROOMS()[b.roomIdx].name.toLowerCase(); }
         else if (r < 0.32 && !b.awayUntil) { b.focus = false; b.awayUntil = now + 15000 + Math.random() * 20000; }
         else if (r < 0.38) { b.hand = !b.hand; b.handAt = now; }
         else if (r < 0.48) { /* idle: no input */ }
@@ -742,7 +930,7 @@
 
   // ================= Roster & monitor =================
   function roster() {
-    if (S.mode === 'sim' && S.sim) return S.sim.bots.map(b => ({ key: b.key, id: null, me: false, sim: true, name: b.name, color: b.color, role: 'student', room: ROOM_KEYS[roomOf(b.x)], x: b.x, z: b.z, yaw: b.yaw, act: b.act, focus: b.focus, lastInput: b.lastInput, hand: b.hand, handAt: b.handAt, updatedAt: b.updatedAt }));
+    if (S.mode === 'sim' && S.sim) return S.sim.bots.map(b => ({ key: b.key, id: null, me: false, sim: true, name: b.name, color: b.color, role: 'student', room: ROOM_KEYS[roomOf(b.x, b.z)], x: b.x, z: b.z, yaw: b.yaw, act: b.act, focus: b.focus, lastInput: b.lastInput, hand: b.hand, handAt: b.handAt, updatedAt: b.updatedAt }));
     if (S.mode === 'live' && S.cls) return S.cls.peers().map(p => ({ key: p.key, id: p.id, me: p.me, name: typeof p.name === 'string' ? p.name.slice(0, 60) : '', role: p.role === 'teacher' ? 'teacher' : 'student', room: ROOM_KEYS.includes(p.room) ? p.room : null,
       x: Number(p.x), z: Number(p.z), yaw: Number(p.yaw) || 0, act: typeof p.act === 'string' ? p.act.slice(0, 120) : '', focus: p.focus !== false, lastInput: Number(p.lastInput) || p.updatedAt, hand: p.hand === true, handAt: Number(p.handAt) || 0, updatedAt: p.updatedAt }));
     return [];
@@ -783,7 +971,7 @@
       for (const [n, l] of [[students.length, 'Present'], [away, 'Away'], [hands, 'Hands up']]) { const s = el('div', 'stat'); s.append(el('b', null, String(n)), el('span', null, l)); stats.append(s); }
       t.append(stats);
       const ctr = el('div', 'ctrls');
-      const here = roomOf(pos.x);
+      const here = roomOf(pos.x, pos.z);
       const g = el('button', 'btn', 'Bring everyone here'); g.type = 'button'; g.title = 'Moves every student to the room you are in'; g.onclick = () => gatherAll(here);
       const lo = el('button', 'btn alt', 'Lower all hands'); lo.type = 'button'; lo.onclick = lowerAll; lo.disabled = !hands;
       ctr.append(g, lo);
@@ -899,6 +1087,7 @@
   let curRoom = -1;
   function setCourse(course) {
     S.course = course; W.labelsOn = false;
+    clearVideo();
     B.kind = 'course'; B.pdf = null; B.images = []; B.assetIds = []; B.key = 'course'; B.name = 'Course slides'; B.page = 0; B.pages = course.slides.length;
     teacherLayer = null; wbKey = null; sg.clearRect(0, 0, 1024, 512);
     clearAvatars();
@@ -913,7 +1102,7 @@
     const chips = $('hChips'); chips.textContent = '';
     if (S.mode === 'live') { chips.append(el('span', 'chip live', 'Live · ' + S.code), el('span', 'chip', S.role === 'teacher' ? 'Lecturer' : 'Student')); }
     else if (S.mode === 'sim') chips.append(el('span', 'chip sim', 'Simulated class'), el('span', 'chip', 'Lecturer view'));
-    else chips.append(el('span', 'chip', 'Explore mode'));
+    else chips.append(el('span', 'chip', 'Explore mode'), el('span', 'chip', S.role === 'teacher' ? 'Lecturer' : 'Student'));
     $('leaveBtn').textContent = S.mode === 'live' ? 'Leave class' : 'Back to courses';
     curRoom = -1; scheduleMonitor();
   }
@@ -929,71 +1118,121 @@
   $('monBtn').addEventListener('click', () => { openSheet('monSheet'); renderMonitor(); });
   function updateRoomPanel(force) {
     if (!S.mode) return;
-    const i = roomOf(pos.x); if (i === curRoom && !force) return;
+    const i = roomOf(pos.x, pos.z); if (i === curRoom && !force) return;
     const entered = i !== curRoom; curRoom = i;
     for (const b of $('rooms').children) b.setAttribute('aria-current', String(Number(b.dataset.i) === i));
     const r = ROOMS()[i];
     $('roomName').textContent = r.name;
     const desc = [
-      B.kind === 'course' ? `Board: ${S.course.code} course slides, slide ${B.page + 1} of ${B.pages}.` : `Board: ${B.name}, slide ${B.page + 1} of ${B.pages}.`,
+      B.kind === 'course' ? `Board: ${S.course.code} course slides, slide ${B.page + 1} of ${B.pages}.` : B.kind === 'video' ? `Screen: video “${B.name}”.` : B.kind === 'youtube' ? 'Screen: YouTube video.' : `Board: ${B.name}, slide ${B.page + 1} of ${B.pages}.`,
       'Click the model to label its parts.',
       `Ask a question about ${S.course.topic.toLowerCase()}. Answers come from the course notes.`,
       'Discuss: ' + S.course.prompt,
+      'The football pitch and playground. Walk back in through any classroom door.',
     ][i];
     $('roomDesc').textContent = desc;
     const row = $('roomBtns'); row.textContent = '';
     const add = (t, fn, alt) => { const b = el('button', alt ? 'btn alt' : 'btn', t); b.type = 'button'; b.onclick = fn; row.append(b); };
     if (i === 0) {
-      add('View board', openBoardView, !canControlBoard());
-      if (canControlBoard()) { add('◀', () => setPage(B.page - 1), true); add('▶', () => setPage(B.page + 1), true); add('Upload PDF or slides', openUpload, true); }
-      else row.append(el('span', 'help', 'Your board follows the lecturer.'));
+      if (B.kind === 'video' && B.video) {
+        add('View video', openBoardView, true);
+        if (canControlBoard()) { add(B.video.paused ? '▶ Play' : '❚❚ Pause', () => videoCmd('toggle')); add('−10 s', () => videoCmd(-10), true); add('+10 s', () => videoCmd(10), true); }
+        if (B.video.muted) add('Turn sound on', () => { B.video.muted = false; updateRoomPanel(true); }, true);
+        if (!canControlBoard()) row.append(el('span', 'help', 'Playback follows the lecturer.'));
+      } else if (B.kind === 'youtube') add('Watch the video', openBoardView);
+      else {
+        add('View board', openBoardView, !canControlBoard());
+        if (canControlBoard()) { add('◀', () => setPage(B.page - 1), true); add('▶', () => setPage(B.page + 1), true); }
+        else row.append(el('span', 'help', 'Your board follows the lecturer.'));
+      }
+      if (canUpload()) add('Add PDF, slides or video', openUpload, true);
     }
     if (i === 1) { add(W.labelsOn ? 'Hide labels' : 'Label the model', () => { toggleLabels(); updateRoomPanel(true); }); if (S.course.model === 'network') add('Send a packet', sendPacket, true); }
     if (i === 2) add('Ask the library', () => openSheet('searchSheet'));
     if (i === 3) add('Open the whiteboard', () => openSheet('wbSheet'));
+    if (i === 4) { if (isTeacherView()) add('Gather the class here', () => gatherAll(4)); add('Back to the lecture hall', () => goRoom(0), true); }
     if (entered) { const msg = 'Entered the ' + r.name.toLowerCase(); S.act = msg; logMine(msg); pub({ act: msg }); }
   }
 
   // ================= Lobby =================
   let lobbyUnsub = null, liveClasses = [];
+  let authTab = 'student';
+  try { authTab = localStorage.getItem('classroom-auth-tab') || 'student'; } catch (e) {}
+  const PENDING = 'classroom-pending-invite';
   function renderAuth() {
     const box = $('authBox'); box.textContent = '';
     if (!BE.configured) { box.hidden = true; return; }
     box.hidden = false;
     if (!BE.signedIn) {
-      box.append(el('h2', null, 'Sign in for live classes'));
+      const tabs = el('div', 'tabs'); tabs.setAttribute('role', 'tablist');
+      for (const [k, t] of [['student', 'I’m a student'], ['lecturer', 'I’m a lecturer']]) {
+        const b = el('button', null, t); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(authTab === k));
+        b.onclick = () => { authTab = k; try { localStorage.setItem('classroom-auth-tab', k); } catch (e) {} renderAuth(); };
+        tabs.append(b);
+      }
+      box.append(tabs);
+      const L = authTab === 'lecturer';
+      box.append(el('h2', null, L ? 'Lecturer sign-in' : 'Student sign-in'));
+      box.append(el('p', 'muted', L ? 'Lecturers start classes, put PDFs, slides and videos on the board, and see the class monitor. New lecturer accounts need the school’s invite code.' : 'Students join classes with the code their lecturer gives them.'));
       const f = el('form', 'authform'); f.noValidate = true;
-      f.innerHTML = '<label>Email<input id="auEmail" type="email" autocomplete="email" required></label><label>Password<input id="auPass" type="password" autocomplete="current-password" minlength="6" required></label><label>Your name (new accounts)<input id="auName" type="text" autocomplete="name" maxlength="60"></label><div class="row"><button class="btn" type="submit" id="auIn">Sign in</button><button class="btn alt" type="button" id="auUp">Create account</button></div><p class="muted" id="auMsg" role="status"></p>';
+      f.innerHTML = '<label>Email<input id="auEmail" type="email" autocomplete="email" required></label>'
+        + '<label>Password<input id="auPass" type="password" autocomplete="current-password" minlength="6" required></label>'
+        + '<label>Your name (new accounts)<input id="auName" type="text" autocomplete="name" maxlength="60"></label>'
+        + (L ? '<label>Lecturer invite code (new accounts)<input id="auInvite" type="text" autocomplete="off" maxlength="64"></label>' : '')
+        + '<div class="row"><button class="btn" type="submit">Sign in</button><button class="btn alt" type="button" id="auUp">Create ' + (L ? 'lecturer' : 'student') + ' account</button></div><p class="muted" id="auMsg" role="status"></p>';
       box.append(f);
-      const msg = () => $('auMsg');
+      const msg = t => { $('auMsg').textContent = t; };
       f.addEventListener('submit', async e => {
-        e.preventDefault(); msg().textContent = 'Signing in…';
-        try { await BE.signIn($('auEmail').value.trim(), $('auPass').value); msg().textContent = ''; }
-        catch (err) { msg().textContent = err.message === 'Invalid login credentials' ? 'That email and password don’t match an account.' : err.message; }
+        e.preventDefault(); msg('Signing in…');
+        try { await BE.signIn($('auEmail').value.trim(), $('auPass').value); msg(''); }
+        catch (err) { msg(err.message === 'Invalid login credentials' ? 'That email and password don’t match an account.' : err.message); }
       });
       $('auUp').addEventListener('click', async () => {
-        const email = $('auEmail').value.trim(), pass = $('auPass').value, name = $('auName').value.trim();
-        if (!email || pass.length < 6 || !name) { msg().textContent = 'Enter your email, a password of at least 6 characters, and your name.'; return; }
-        msg().textContent = 'Creating your account…';
-        try { const r = await BE.signUp(email, pass, name); msg().textContent = r.needsConfirmation ? 'Check your email to confirm your account, then sign in.' : ''; }
-        catch (err) { msg().textContent = err.message; }
+        const email = $('auEmail').value.trim(), pass = $('auPass').value, name = $('auName').value.trim(), invite = L ? $('auInvite').value.trim() : '';
+        if (!email || pass.length < 6 || !name) { msg('Enter your email, a password of at least 6 characters, and your name.'); return; }
+        if (L && !invite) { msg('Enter the lecturer invite code from your school admin.'); return; }
+        msg('Creating your account…');
+        try {
+          const r = await BE.signUp(email, pass, name);
+          if (r.needsConfirmation) { if (L) { try { localStorage.setItem(PENDING, invite); } catch (e) {} } msg('Check your email to confirm your account, then sign in here.'); return; }
+          if (L) { const ok = await BE.claimLecturer(invite); if (!ok) toast('That invite code isn’t right, so this is a student account for now. You can enter the code again after signing in.', 7000); }
+        } catch (err) { msg(err.message); }
       });
     } else {
       const row = el('div', 'row');
       row.append(el('span', null, 'Signed in as '), el('b', null, BE.user.name), el('span', 'chip', BE.isLecturer ? 'Lecturer' : 'Student'));
       const out = el('button', 'btn alt', 'Sign out'); out.type = 'button'; out.onclick = () => BE.signOut(); row.append(out);
       const ren = el('button', 'linkbtn', 'Change my name'); ren.type = 'button';
-      ren.onclick = async () => {
+      ren.onclick = () => {
         const f = el('form', 'row'); const inp = el('input'); inp.type = 'text'; inp.value = BE.user.name; inp.maxLength = 60; inp.setAttribute('aria-label', 'Your name');
         const sv = el('button', 'btn', 'Save'); sv.type = 'submit'; f.append(inp, sv); ren.replaceWith(f); inp.focus();
         f.addEventListener('submit', async e => { e.preventDefault(); const v = inp.value.trim(); if (!v) return; try { await BE.setName(v); renderLobby(); } catch (err) { toast(err.message); } });
       };
       row.append(ren);
       box.append(row);
+      if (!BE.isLecturer) {
+        const f = el('form', 'row'); const inp = el('input'); inp.type = 'text'; inp.placeholder = 'Lecturer invite code'; inp.setAttribute('aria-label', 'Lecturer invite code'); inp.maxLength = 64;
+        const go = el('button', 'btn alt', 'Activate lecturer access'); go.type = 'submit';
+        f.append(el('span', 'muted', 'Teaching here?'), inp, go); box.append(f);
+        f.addEventListener('submit', async e => { e.preventDefault(); if (!inp.value.trim()) return; try { const ok = await BE.claimLecturer(inp.value.trim()); toast(ok ? 'Lecturer access is on.' : 'That invite code isn’t right.'); if (ok) renderLobby(); } catch (err) { toast(err.message); } });
+      }
     }
   }
+  function renderRoleBox() {
+    const box = $('roleBox'); box.textContent = '';
+    if (liveOK()) { box.hidden = true; return; }
+    box.hidden = false;
+    box.append(el('span', 'muted', 'Try it as:'));
+    const tabs = el('div', 'tabs'); tabs.setAttribute('role', 'tablist');
+    for (const [k, t] of [['student', 'A student'], ['lecturer', 'A lecturer']]) {
+      const b = el('button', null, t); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(S.demoRole === k));
+      b.onclick = () => { S.demoRole = k; renderLobby(); }; tabs.append(b);
+    }
+    box.append(tabs);
+    box.append(el('span', 'muted', S.demoRole === 'lecturer' ? 'Lecturers can put a PDF, slides or a video on the board and watch a simulated class.' : 'Students walk the campus, use the board, lab, library and whiteboard.'));
+  }
   function renderLobby() {
-    renderAuth();
+    renderAuth(); renderRoleBox();
     const st = $('status'); st.textContent = '';
     if (!cap.checked) st.append('Loading…');
     else if (!BE.configured) st.append(el('b', null, 'Demo mode. '), 'Explore every course and preview the lecturer’s monitoring view with a simulated class. Live classes turn on when this site is connected to Supabase (see the README).');
@@ -1021,9 +1260,14 @@
       const card = el('article', 'course'); card.style.setProperty('--c', c.accent);
       card.append(el('span', 'code', c.code), el('h3', null, c.title), el('p', null, 'Topic: ' + c.topic), el('span', 'rooms-l', `Lecture hall · ${c.labName} · Library · Discussion room`));
       const row = el('div', 'row');
-      const ex = el('button', 'btn alt', 'Explore'); ex.type = 'button'; ex.onclick = () => { S.mode = 'solo'; S.role = 'student'; setCourse(c); showHud(); logMine('Started exploring ' + c.code); }; row.append(ex);
+      const lecturerView = liveOK() ? BE.isLecturer : S.demoRole === 'lecturer';
+      const explore = (role, label, alt) => { const ex = el('button', alt ? 'btn alt' : 'btn', label); ex.type = 'button'; ex.onclick = () => { S.mode = 'solo'; S.role = role; setCourse(c); showHud(); logMine((role === 'teacher' ? 'Preparing ' : 'Started exploring ') + c.code); }; row.append(ex); };
       if (liveOK() && BE.isLecturer) { const s = el('button', 'btn', 'Start live class'); s.type = 'button'; s.onclick = () => startLiveClass(c); row.append(s); }
-      if (!liveOK() || BE.isLecturer) { const p = el('button', 'btn alt', 'Preview with simulated class'); p.type = 'button'; p.onclick = () => startSim(c); row.append(p); }
+      if (lecturerView) {
+        if (!liveOK()) { const p = el('button', 'btn', 'Teach a simulated class'); p.type = 'button'; p.onclick = () => startSim(c); row.append(p); }
+        else { const p = el('button', 'btn alt', 'Simulated class'); p.type = 'button'; p.onclick = () => startSim(c); row.append(p); }
+        explore('teacher', 'Prepare on my own', true);
+      } else explore('student', liveOK() ? 'Explore on my own' : 'Enter as a student', liveOK());
       card.append(row); grid.append(card);
     }
   }
@@ -1038,7 +1282,12 @@
   async function initBackend() {
     try { await BE.init(); } catch (e) {}
     cap.checked = true; watchLobby(); renderLobby();
-    BE.onAuth(() => { if (S.mode === 'live' && !BE.signedIn) leaveSession(); watchLobby(); if (!$('lobby').hidden) renderLobby(); });
+    BE.onAuth(async () => {
+      if (S.mode === 'live' && !BE.signedIn) leaveSession();
+      let pending = null; try { pending = localStorage.getItem(PENDING); } catch (e) {}
+      if (BE.signedIn && pending && !BE.isLecturer) { try { localStorage.removeItem(PENDING); const ok = await BE.claimLecturer(pending); if (!ok) toast('The lecturer invite code wasn’t right, so this is a student account for now.', 7000); } catch (e) {} }
+      watchLobby(); if (!$('lobby').hidden) renderLobby();
+    });
   }
 
   // ================= Loop =================
@@ -1070,6 +1319,7 @@
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
+  window.__classroomDebug = () => ({ kind: B.kind, page: B.page, pages: B.pages, paused: B.video ? B.video.paused : null, time: B.video ? B.video.currentTime : null, room: roomOf(pos.x, pos.z), x: pos.x, z: pos.z });
   // boot
   setCourse(COURSES[0]);
   pos.set(0, 1.6, 5.6);

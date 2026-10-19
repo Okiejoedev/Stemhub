@@ -90,7 +90,7 @@
   };
 
   // ---------- Boards ----------
-  const boardRow = r => r && ({ kind: r.kind, filePaths: r.file_paths || [], name: r.name, page: r.page, pages: r.pages });
+  const boardRow = r => r && ({ kind: r.kind, filePaths: r.file_paths || [], name: r.name, page: r.page, pages: r.pages, media: r.media || {} });
   BE.watchBoard = function (code, room, cb) {
     let stopped = false;
     sb.from('class_boards').select('*').eq('class_code', code).eq('room', room).maybeSingle().then(({ data }) => { if (!stopped && data) cb(boardRow(data)); });
@@ -104,6 +104,7 @@
     if (b.name !== undefined) row.name = b.name;
     if (b.page !== undefined) row.page = b.page;
     if (b.pages !== undefined) row.pages = b.pages;
+    if (b.media !== undefined) row.media = b.media;
     const { error } = await sb.from('class_boards').upsert(row);
     if (error) fail(error, 'Could not update the board');
   };
@@ -118,6 +119,13 @@
     const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, 60 * 60 * 6);
     if (error) fail(error, 'Could not open the file');
     return data.signedUrl;
+  };
+
+  BE.claimLecturer = async function (invite) {
+    const { data, error } = await sb.rpc('claim_lecturer', { invite });
+    if (error) fail(error, 'Could not check the invite code');
+    if (data) { const { data: s } = await sb.auth.getSession(); await loadProfile(s && s.session); BE._authListeners.forEach(fn => fn(BE.user)); }
+    return !!data;
   };
 
   // ---------- Attendance (each student records their own) ----------

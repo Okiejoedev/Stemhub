@@ -234,6 +234,8 @@ button, input { font: inherit; color: inherit; }
       </ol>
     </div>
     <div>
+      <h2>Study mode</h2>
+      <p><b>Run a study session</b> (top of the page) shows six answers in one of three structures, counterbalanced across participants, and records accuracy, time, confidence and trust. Results stay in the browser until you download them as a CSV.</p>
       <h2>Next steps</h2>
       <p>Compare free-form model answers with these grounded, layered answers on accuracy, time to understand and trust, first in a lab study and then in a short diary study with people's own data. A further question: can people tell when an answer is wrong?</p>
       <p class="fine">The data here is generated for demonstration and describes no real person. This prototype does not give medical advice. If Claude is unavailable in your view, questions are read by built-in rules and the answers are computed the same way.</p>
@@ -966,5 +968,183 @@ const Engine = { DATA, METRICS, DATA_START, DATA_END, ruleParse, planPrompt, nor
 })();
 </script>
 <script>if (!(window.claude && window.claude.use)) { var b = document.getElementById("mdAi"); if (b) b.hidden = true; }</script>
+<style>
+.studybtn { padding: 8px 14px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 700; cursor: pointer; font-size: 14px; }
+.studybtn:hover { background: var(--accent); color: var(--accent-ink); }
+.study { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow-y: auto; }
+.study .in { max-width: 760px; margin: 0 auto; padding-block: 32px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 18px; }
+.study h2 { font-family: var(--display); font-size: clamp(24px, 4vw, 32px); margin: 0; }
+.study h3 { font-family: var(--display); font-size: 18px; margin: 0; }
+.study p { margin: 0; max-width: 65ch; }
+.study .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.study .prog { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.study .bar { height: 6px; border-radius: 3px; background: var(--sunk); overflow: hidden; }
+.study .bar > i { display: block; height: 100%; background: var(--accent); }
+.study .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.study ol, .study ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.study fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.study legend { font-weight: 700; margin-bottom: 6px; padding: 0; }
+.study .opt { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; cursor: pointer; }
+.study .opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.study .scale { display: flex; gap: 6px; flex-wrap: wrap; }
+.study .scale label { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 52px; padding: 8px 6px; border: 1px solid var(--line-strong); border-radius: 10px; cursor: pointer; font-size: 13px; }
+.study .scale label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.study .ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); max-width: 320px; }
+.study .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.study .asked { font-size: 14px; color: var(--muted); }
+.study .asked b { color: var(--ink); }
+.study input[type=text] { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font: inherit; font-family: var(--mono); }
+.study .ghost2 { padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line-strong); background: transparent; color: var(--ink); cursor: pointer; font: inherit; }
+.study table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.study th, .study td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.study th { font-size: 12px; color: var(--muted); }
+.study .warn { color: var(--warn); font-size: 14px; }
+</style>
+<script>
+(function () {
+  const E = Engine;
+  const KEY = 'wristside-study-sessions';
+  // Each task: the question the app answers, and a check question answerable from the first answer layer.
+  const TASKS = [
+    { id: 'T1', ask: 'How did I sleep this week?', q: 'About how long did this person sleep per night over the last 7 days?', opts: ['6 h 46 min', '7 h 27 min', '5 h 41 min', '7 h 19 min'] },
+    { id: 'T2', ask: 'Did I walk more than last week?', q: 'What was the average daily step count in the week of 4–10 Oct?', opts: ['8,373 steps', '8,111 steps', '10,751 steps', '8,331 steps'] },
+    { id: 'T3', ask: 'What was my best night of sleep?', q: 'Which night had the longest sleep?', opts: ['The night into Sat 3 Oct', 'The night into Sun 27 Sep', 'The night into Wed 14 Oct', 'The night into Sat 17 Oct'] },
+    { id: 'T4', ask: 'How many days did I hit 10,000 steps?', q: 'On how many of the recorded days in the last 7 days did this person reach 10,000 steps?', opts: ['1 day', '2 days', '3 days', 'None'] },
+    { id: 'T5', ask: 'Is my resting heart rate going up?', q: 'What happened to this person’s resting heart rate over the 4 weeks?', opts: ['It went up', 'It went down', 'It stayed about the same', 'There is not enough data to tell'] },
+    { id: 'T6', ask: 'How did I sleep on Monday?', q: 'How long did this person sleep on the night into Monday 12 Oct?', opts: ['No sleep was recorded that night', '6 h 49 min', '7 h 05 min', '5 h 41 min'] },
+  ]; // the first option in each list is correct; options are shuffled per participant
+  const LEVEL_NAMES = { 1: 'Answer only', 2: 'Answer + comparison', 3: 'Answer + comparison + context' };
+
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return []; } };
+  const save = list => { try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {} };
+  function seeded(str) { let h = 2166136261; for (const c of str) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return () => { h += 0x6D2B79F5; let t = h; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function shuffle(arr, rnd) { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+  const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
+  const newPid = () => 'P-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+
+  let root = null, sess = null, idx = 0, shownAt = 0;
+
+  // Entry button in the page header
+  const meta = document.querySelector('.meta');
+  if (meta) { const b = el('button', 'studybtn', 'Run a study session'); b.type = 'button'; b.onclick = openIntro; meta.append(b); }
+
+  function shell() {
+    if (!root) { root = el('div', 'study'); root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', 'Study session'); document.body.append(root); }
+    root.hidden = false; root.textContent = ''; document.body.style.overflow = 'hidden';
+    const inner = el('div', 'in'); root.append(inner); root.scrollTop = 0; return inner;
+  }
+  function close() { if (root) root.hidden = true; document.body.style.overflow = ''; }
+  addEventListener('keydown', e => { if (e.key === 'Escape' && root && !root.hidden && (!sess || sess.done)) close(); });
+
+  function openIntro() {
+    const n = shell(); sess = null;
+    const top = el('div', 'top'); top.append(el('h2', null, 'Study session')); const x = el('button', 'ghost2', 'Close'); x.type = 'button'; x.onclick = close; top.append(x); n.append(top);
+    const p = el('div', 'panel');
+    p.append(el('p', null, 'This short session tests how the structure of an answer affects how quickly and accurately people understand questions about wearable health data, and how much they trust the answer.'));
+    const ol = el('ol');
+    ['You will see 6 questions that Wristside has answered about one fictional person’s data.', 'Each answer is shown in one of three structures: the answer only, the answer with a comparison, or the answer with a comparison and context.', 'For each one, answer a check question, then rate how sure you are and how much you trust the answer.', 'It takes about 5 minutes. The data is generated sample data, not yours.'].forEach(t => ol.append(el('li', null, t)));
+    p.append(ol);
+    p.append(el('p', 'asked', 'Results are saved only in this browser. Nothing is sent anywhere unless the researcher downloads and shares the results file. No name or contact details are collected.'));
+    const pidRow = el('div', 'row'); const lab = el('label', null, 'Participant code '); const pid = el('input'); pid.type = 'text'; pid.value = newPid(); pid.maxLength = 20; pid.id = 'stPid'; lab.htmlFor = 'stPid'; pidRow.append(lab, pid); p.append(pidRow);
+    const cons = el('label', 'opt'); const cb = el('input'); cb.type = 'checkbox'; cb.id = 'stConsent'; cons.append(cb, el('span', null, 'I understand what this session involves and agree to take part.')); p.append(cons);
+    const msg = el('p', 'warn'); msg.setAttribute('role', 'status'); p.append(msg);
+    const go = el('button', 'btn', 'Start the session'); go.type = 'button';
+    go.onclick = () => { if (!cb.checked) { msg.textContent = 'Tick the box to agree before starting.'; return; } start(pid.value.trim() || newPid()); };
+    p.append(go); n.append(p);
+    const prev = load();
+    const r = el('div', 'panel'); r.append(el('h3', null, 'Results in this browser'));
+    r.append(el('p', 'asked', prev.length ? `${prev.length} completed session${prev.length === 1 ? '' : 's'} saved.` : 'No completed sessions yet.'));
+    if (prev.length) {
+      const row = el('div', 'row');
+      const dl = el('button', 'ghost2', 'Download all results (CSV)'); dl.type = 'button'; dl.onclick = () => download(prev, 'wristside-study-all.csv'); row.append(dl);
+      const clr = el('button', 'ghost2', 'Delete saved results'); clr.type = 'button';
+      clr.onclick = () => { if (clr.dataset.sure) { save([]); openIntro(); } else { clr.dataset.sure = '1'; clr.textContent = 'Press again to delete all saved results'; } };
+      row.append(clr); r.append(row);
+    }
+    n.append(r);
+  }
+
+  function start(pid) {
+    const prev = load(); const rnd = seeded(pid + ':' + prev.length);
+    const rot = prev.length % 3; const base = [1, 2, 3, 1, 2, 3].map(l => ((l - 1 + rot) % 3) + 1);
+    const order = shuffle(TASKS, rnd);
+    const levels = shuffle(base, rnd);
+    sess = { pid, startedAt: new Date().toISOString(), rows: [], plan: order.map((t, i) => ({ task: t, level: levels[i], opts: shuffle(t.opts, rnd) })), done: false };
+    idx = 0; showTask();
+  }
+
+  function showTask() {
+    const n = shell(); const step = sess.plan[idx]; const t = step.task;
+    const top = el('div', 'top'); top.append(el('span', 'prog', `Question ${idx + 1} of ${sess.plan.length} · ${sess.pid}`)); n.append(top);
+    const bar = el('div', 'bar'); const fill = el('i'); fill.style.width = `${(idx / sess.plan.length) * 100}%`; bar.append(fill); n.append(bar);
+    const a = E.answer(E.ruleParse(t.ask));
+    const card = el('div', 'ans'); card.style.cursor = 'default';
+    const qa = el('div', 'q'); qa.append('Someone asked Wristside: '); qa.append(el('b', null, '“' + t.ask + '”')); card.append(qa);
+    [[a.short, 1], [a.comparison, 2], [a.context, 3]].forEach(([txt, l]) => {
+      if (!txt || l > step.level) return;
+      const p = el('p', 'layer l' + l); p.append(el('span', 'n', String(l)), el('span', null, txt)); card.append(p);
+    });
+    n.append(card);
+    const form = el('form', 'panel'); form.noValidate = true;
+    const fs = el('fieldset'); fs.append(el('legend', null, t.q));
+    step.opts.forEach((o, i) => { const lab = el('label', 'opt'); const r = el('input'); r.type = 'radio'; r.name = 'ans'; r.value = o; lab.append(r, el('span', null, o)); fs.append(lab); });
+    form.append(fs);
+    const scale = (name, label, lo, hi) => {
+      const f = el('fieldset'); f.append(el('legend', null, label)); const s = el('div', 'scale');
+      for (let v = 1; v <= 5; v++) { const lab = el('label'); const r = el('input'); r.type = 'radio'; r.name = name; r.value = String(v); lab.append(r, el('span', null, String(v))); s.append(lab); }
+      f.append(s); const ends = el('div', 'ends'); ends.append(el('span', null, '1 = ' + lo), el('span', null, '5 = ' + hi)); f.append(ends); return f;
+    };
+    form.append(scale('conf', 'How sure are you of your answer?', 'not sure at all', 'completely sure'));
+    form.append(scale('trust', 'How much do you trust Wristside’s answer?', 'not at all', 'completely'));
+    const msg = el('p', 'warn'); msg.setAttribute('role', 'status'); form.append(msg);
+    const next = el('button', 'btn', idx === sess.plan.length - 1 ? 'Finish' : 'Next question'); next.type = 'submit'; form.append(next);
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      if (!fd.get('ans') || !fd.get('conf') || !fd.get('trust')) { msg.textContent = 'Answer the question and both ratings to continue.'; return; }
+      const chosen = fd.get('ans');
+      sess.rows.push({ participant: sess.pid, session_started: sess.startedAt, position: idx + 1, task_id: t.id, question_asked: t.ask, structure_level: step.level, structure: LEVEL_NAMES[step.level], check_question: t.q, chosen, correct_answer: t.opts[0], is_correct: chosen === t.opts[0] ? 1 : 0, time_ms: Math.round(performance.now() - shownAt), confidence_1to5: Number(fd.get('conf')), trust_1to5: Number(fd.get('trust')), completed_at: new Date().toISOString() });
+      idx++;
+      if (idx < sess.plan.length) showTask(); else finish();
+    });
+    n.append(form);
+    shownAt = performance.now();
+  }
+
+  function finish() {
+    sess.done = true;
+    const all = load(); all.push({ pid: sess.pid, startedAt: sess.startedAt, rows: sess.rows }); save(all);
+    const n = shell();
+    const top = el('div', 'top'); top.append(el('h2', null, 'Thank you')); n.append(top);
+    const rows = sess.rows; const correct = rows.reduce((s, r) => s + r.is_correct, 0);
+    const med = arr => { const a = arr.slice().sort((x, y) => x - y); return a.length ? a[Math.floor((a.length - 1) / 2)] : 0; };
+    const p = el('div', 'panel');
+    p.append(el('p', null, `${sess.pid} answered ${correct} of ${rows.length} check questions correctly, with a median of ${(med(rows.map(r => r.time_ms)) / 1000).toFixed(1)} seconds per question.`));
+    const tbl = el('table'); const thead = el('thead'); const hr = el('tr'); ['Answer structure', 'Correct', 'Median time', 'Mean trust (1–5)'].forEach(h => hr.append(el('th', null, h))); thead.append(hr); tbl.append(thead);
+    const tb = el('tbody');
+    [1, 2, 3].forEach(l => { const rs = rows.filter(r => r.structure_level === l); if (!rs.length) return; const tr = el('tr'); tr.append(el('td', null, LEVEL_NAMES[l]), el('td', null, `${rs.reduce((s, r) => s + r.is_correct, 0)} of ${rs.length}`), el('td', null, (med(rs.map(r => r.time_ms)) / 1000).toFixed(1) + ' s'), el('td', null, (rs.reduce((s, r) => s + r.trust_1to5, 0) / rs.length).toFixed(1))); tb.append(tr); });
+    tbl.append(tb); p.append(tbl);
+    p.append(el('p', 'asked', 'One session is far too small to compare structures. Pool the results from several participants before drawing any conclusion.'));
+    const row = el('div', 'row');
+    const d1 = el('button', 'btn', 'Download this session (CSV)'); d1.type = 'button'; d1.onclick = () => download([{ rows }], `wristside-${sess.pid}.csv`);
+    const d2 = el('button', 'ghost2', 'Download all sessions (CSV)'); d2.type = 'button'; d2.onclick = () => download(load(), 'wristside-study-all.csv');
+    const nx = el('button', 'ghost2', 'Next participant'); nx.type = 'button'; nx.onclick = openIntro;
+    const cl = el('button', 'ghost2', 'Close'); cl.type = 'button'; cl.onclick = close;
+    row.append(d1, d2, nx, cl); p.append(row);
+    n.append(p);
+  }
+
+  function download(sessions, filename) {
+    const cols = ['participant', 'session_started', 'position', 'task_id', 'question_asked', 'structure_level', 'structure', 'check_question', 'chosen', 'correct_answer', 'is_correct', 'time_ms', 'confidence_1to5', 'trust_1to5', 'completed_at'];
+    const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const lines = [cols.join(',')];
+    for (const s of sessions) for (const r of s.rows) lines.push(cols.map(c => esc(r[c])).join(','));
+    const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.append(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+})();
+</script>
+
 </body>
 </html>

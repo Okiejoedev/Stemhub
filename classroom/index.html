@@ -159,6 +159,12 @@ table.att th { font-size: 12px; color: var(--muted); font-weight: 700; }
 .authform label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 .authform input, .authbox input { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0B1014; color: var(--ink); }
 .authform .row, .authform p { grid-column: 1 / -1; margin: 0; }
+.tabs { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--chip); border: 1px solid var(--line); gap: 2px; flex-wrap: wrap; }
+.tabs button { border: 0; background: transparent; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--muted); }
+.tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.rolebox { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+#bvMedia iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 10px; display: block; background: #000; }
+#bvMedia video { max-height: 70vh; }
 #loading { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 15px; z-index: 1; }
 </style>
 </head>
@@ -205,6 +211,7 @@ table.att th { font-size: 12px; color: var(--muted); font-weight: 700; }
     </div>
     <div class="authbox" id="authBox" hidden></div>
     <div class="status" id="status">Loading…</div>
+    <div class="rolebox" id="roleBox" hidden></div>
     <section id="liveSection" hidden>
       <h2>Live classes now</h2>
       <div class="classes" id="classList"></div>
@@ -228,8 +235,10 @@ table.att th { font-size: 12px; color: var(--muted); font-weight: 700; }
     <p>A 2026 browser re-creation inspired by my BSc final-year project, <i>Interactive 3D Classroom with User Support Using Virtual Reality</i> (Federal University Oye-Ekiti, supervised by Mrs. Daramola). The original was built with Blender, Unity, Unreal Engine and Mozilla Spoke and tested with 50 students and 5 educators. Its files were not preserved.</p>
     <p class="muted">This version is new work. The courses, rooms, models, live classes, board uploads and class monitoring were designed for this demo and are not copies of the original.</p>
     <ul class="muted">
-      <li>Four courses, each with a lecture hall, a lab, a library and a discussion room.</li>
-      <li>Lecturers can put a PDF or slide images on the lecture-hall board; students’ boards follow the lecturer’s page.</li>
+      <li>Four courses, each with a lecture hall, a lab, a library and a discussion room, opening onto shared school grounds.</li>
+      <li>Lecturers can put a PDF, slide images or a video on the lecture-hall board; students’ boards follow the lecturer’s page, and videos play in sync. YouTube links are supported too.</li>
+      <li>Separate sign-in for lecturers and students; lecturer accounts need the school’s invite code.</li>
+      <li>School grounds with a football pitch and a playground, reached through each room’s back door.</li>
       <li>Live classes: students join with a code; the lecturer sees each student’s room, activity, whether the class tab is open, and raised hands.</li>
       <li>Students are told what the lecturer can see.</li>
       <li>The simulated class preview uses made-up students to show the lecturer’s view.</li>
@@ -271,6 +280,7 @@ table.att th { font-size: 12px; color: var(--muted); font-weight: 700; }
   <div class="card wide" role="dialog" aria-modal="true" aria-labelledby="bvTitle">
     <div class="row" style="justify-content:space-between"><h2 id="bvTitle">Lecture board</h2><span class="muted" id="bvPage"></span></div>
     <canvas id="bvCanvas" width="1280" height="720"></canvas>
+    <div id="bvMedia" hidden></div>
     <div class="row" id="bvCtrls"></div>
   </div>
 </div>
@@ -278,16 +288,20 @@ table.att th { font-size: 12px; color: var(--muted); font-weight: 700; }
 <div class="sheet" id="uploadSheet" hidden>
   <div class="card" role="dialog" aria-modal="true" aria-labelledby="upTitle">
     <h2 id="upTitle">Put your material on the board</h2>
-    <p>Choose a <b>PDF</b>, or one or more <b>slide images</b> (PNG or JPG). Each page or image becomes one slide.</p>
-    <p class="muted">Using PowerPoint or Google Slides? Save or download the presentation as a PDF first (in PowerPoint: File → Save As → PDF), then upload that file.</p>
+    <p>Choose a <b>PDF</b>, one or more <b>slide images</b> (PNG or JPG), or a <b>video</b> (MP4 or WebM, up to 50 MB). Each PDF page or image becomes one slide. A video plays on the lecture-hall screen.</p>
+    <p class="muted">Using PowerPoint or Google Slides? Save or download the presentation as a PDF first (in PowerPoint: File → Save As → PDF), then choose that file.</p>
     <p class="muted" id="upScope"></p>
     <div class="row">
       <label class="btn" for="fileIn" tabindex="0">Choose file</label>
-      <input id="fileIn" type="file" accept="application/pdf,image/png,image/jpeg,image/webp" multiple hidden>
+      <input id="fileIn" type="file" accept="application/pdf,image/png,image/jpeg,image/webp,video/mp4,video/webm,.pptx,.ppt" multiple hidden>
       <button class="btn alt" id="useCourseSlides" type="button">Use the course slides</button>
-      <button class="btn alt" data-close type="button">Cancel</button>
     </div>
+    <form class="row" id="ytForm">
+      <input type="text" id="ytLink" aria-label="YouTube link" placeholder="Or paste a YouTube link" autocomplete="off">
+      <button class="btn alt" type="submit">Add YouTube video</button>
+    </form>
     <p class="muted" id="upStatus" role="status"></p>
+    <div class="row"><button class="btn alt" data-close type="button">Cancel</button></div>
   </div>
 </div>
 

@@ -93,4 +93,4 @@ const COURSES = [
     prompt: 'How does a message travel from your phone to a website’s server?',
   },
 ];
-const ROOM_KEYS = ['lecture', 'lab', 'library', 'discussion'];
+const ROOM_KEYS = ['lecture', 'lab', 'library', 'discussion', 'grounds'];
