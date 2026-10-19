@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="A 3D virtual campus for four courses. Lecturers run live classes, put PDFs or slides on the board and see where students are; students join with a class code.">
+<title>Interactive 3D Classroom</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap">
+<style>
+html, body { margin: 0; } img { max-width: 100%; }
+/* Layout: one full-screen 3D campus with a quiet dark HUD; a lobby sheet picks the course and class. Single deliberate dark look. */
+:root {
+  color-scheme: dark;
+  --bg: #0D1115; --panel: rgba(16, 22, 28, 0.9); --panel-solid: #121920; --raise: #1A242D; --ink: #EEF2F4; --muted: #A3B0B8; --line: rgba(255,255,255,0.14);
+  --accent: #F4B740; --accent-ink: #1A1408; --chip: rgba(255,255,255,0.08); --ok: #6FD3A0; --warn: #F2B95E; --bad: #FF8A80; --live: #FF6B5E;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); overflow: hidden; font-size: 15px; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#stage { position: fixed; inset: 0; touch-action: none; }
+#stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+#stage canvas:active { cursor: grabbing; }
+.btn { border: 0; background: var(--accent); color: var(--accent-ink); font-weight: 700; padding: 8px 14px; border-radius: 10px; cursor: pointer; font-size: 14px; white-space: nowrap; }
+.btn.alt { background: var(--chip); color: var(--ink); font-weight: 400; }
+.btn.danger { background: rgba(255,107,94,0.16); color: var(--bad); font-weight: 700; }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--chip); font-size: 12px; font-weight: 700; color: var(--muted); }
+.chip.live { background: rgba(255,107,94,0.16); color: var(--live); }
+.chip.live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chip.sim { background: rgba(242,185,94,0.16); color: var(--warn); }
+.chip.flag { background: rgba(244,183,64,0.16); color: var(--accent); }
+.muted { color: var(--muted); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+
+/* Lobby */
+#lobby { position: fixed; inset: 0; z-index: 20; overflow-y: auto; background: rgba(9,13,16,0.86); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.lob { max-width: 1080px; margin: 0 auto; padding-block: calc(env(safe-area-inset-top, 0px) + 32px) calc(env(safe-area-inset-bottom, 0px) + 40px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 28px; }
+.lob h1 { font-family: var(--display); font-size: clamp(30px, 5vw, 46px); margin: 0; line-height: 1.05; letter-spacing: -0.02em; text-wrap: balance; }
+.lob h2 { font-family: var(--display); font-size: 20px; margin: 0 0 12px; }
+.lob .intro { display: flex; flex-direction: column; gap: 10px; max-width: 70ch; }
+.lob .intro p { margin: 0; color: var(--muted); line-height: 1.5; }
+.status { display: block; padding: 12px 14px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); line-height: 1.45; }
+.status b { color: var(--ink); }
+.courses { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.course { background: var(--raise); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; border-top: 4px solid var(--c); }
+.course .code { font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--c2, var(--muted)); }
+.course h3 { margin: 0; font-family: var(--display); font-size: 19px; line-height: 1.2; }
+.course p { margin: 0; color: var(--muted); font-size: 14px; }
+.course .rooms-l { font-size: 13px; color: var(--muted); }
+.course .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 4px; }
+.classes { display: flex; flex-direction: column; gap: 8px; }
+.cls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 14px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); }
+.cls .info { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 2px; }
+.cls .code-big { font-family: var(--display); font-size: 18px; letter-spacing: .08em; }
+.joinrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.joinrow input { width: 160px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0B1014; text-transform: uppercase; letter-spacing: .12em; }
+.empty { color: var(--muted); font-size: 14px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 12px; }
+
+/* HUD */
+.hud { position: fixed; z-index: 5; }
+.top { top: calc(env(safe-area-inset-top, 0px) + 12px); left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; justify-content: space-between; pointer-events: none; }
+.top > * { pointer-events: auto; }
+.ident { padding: 10px 14px; max-width: 380px; display: flex; flex-direction: column; gap: 6px; }
+.ident .code { font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--muted); }
+.ident h1 { margin: 0; font-family: var(--display); font-size: 19px; line-height: 1.15; }
+.ident .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 13px; }
+.navgrp { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.rooms { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; justify-content: flex-end; }
+.rooms button { border: 0; background: var(--chip); padding: 8px 12px; border-radius: 10px; cursor: pointer; font-size: 14px; }
+.rooms button[aria-current="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+#monBtn { display: none; }
+
+.actions { left: max(12px, env(safe-area-inset-left, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); padding: 12px 14px; max-width: min(460px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 8px; }
+.actions .room { font-family: var(--display); font-size: 18px; margin: 0; }
+.actions p { margin: 0; font-size: 14px; color: var(--muted); }
+.actions .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.help { font-size: 12px; color: var(--muted); }
+
+.pad { right: max(12px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(2, 46px); gap: 6px; }
+.pad button { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; font-size: 17px; cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: none; }
+.pad .up { grid-column: 2; grid-row: 1; } .pad .lt { grid-column: 1; grid-row: 2; } .pad .dn { grid-column: 2; grid-row: 2; } .pad .rt { grid-column: 3; grid-row: 2; }
+
+.side { right: max(12px, env(safe-area-inset-right, 0px)); top: calc(env(safe-area-inset-top, 0px) + 120px); max-height: calc(100% - 260px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); width: 330px; padding: 12px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.side h2, .sheet h3 { margin: 0; font-family: var(--display); font-size: 17px; }
+.panelbody { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.stat { background: var(--chip); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.stat b { font-family: var(--display); font-size: 20px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 11px; color: var(--muted); }
+.roster { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.roster li { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px; border-radius: 10px; background: var(--chip); }
+.roster img, .roster .av { width: 30px; height: 30px; border-radius: 50%; display: block; object-fit: cover; }
+.roster .who { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.roster .nm { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roster .act { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.st.on { background: rgba(111,211,160,0.15); color: var(--ok); }
+.st.away { background: rgba(242,185,94,0.16); color: var(--warn); }
+.st.idle { background: var(--chip); color: var(--muted); }
+.st.hand { background: var(--accent); color: var(--accent-ink); }
+.ctrls { display: flex; flex-wrap: wrap; gap: 6px; }
+.note { font-size: 12px; color: var(--muted); line-height: 1.4; margin: 0; }
+.mylog { list-style: none; margin: 0; padding: 0; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
+.mylog li { display: grid; grid-template-columns: 62px minmax(0,1fr); gap: 6px; color: var(--muted); }
+.mylog time { color: var(--ink); opacity: .8; font-variant-numeric: tabular-nums; }
+
+.toast { left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 90px); padding: 10px 16px; border-radius: 12px; background: var(--panel-solid); border: 1px solid var(--line); font-size: 14px; max-width: calc(100vw - 32px); z-index: 30; }
+
+@media (max-width: 1000px) {
+  .side { display: none !important; }
+  #monBtn { display: inline-flex; }
+}
+@media (max-width: 700px) {
+  .ident { max-width: 100%; flex: 1 1 100%; }
+  .navgrp { align-items: flex-start; flex: 1 1 100%; }
+  .rooms { justify-content: flex-start; }
+  .actions { max-width: calc(100vw - 200px); }
+  .actions p, .help { display: none; }
+}
+@media (max-width: 480px) {
+  .toast { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 250px); }
+  .actions { max-width: calc(100vw - 24px); bottom: calc(env(safe-area-inset-bottom, 0px) + 124px); }
+  .pad { left: max(12px, env(safe-area-inset-left, 0px)); right: auto; }
+}
+
+/* Sheets */
+.sheet { position: fixed; z-index: 25; inset: 0; display: grid; place-items: center; padding: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); background: rgba(5,8,10,0.6); }
+.sheet > .card { background: var(--panel-solid); width: min(680px, 100%); max-height: 90%; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.sheet > .card.wide { width: min(980px, 100%); }
+.sheet h2 { margin: 0; font-family: var(--display); font-size: 22px; }
+.sheet p { margin: 0; line-height: 1.5; }
+.sheet .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sheet input[type=text] { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0B1014; }
+.result { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.result .src { font-size: 12px; color: var(--muted); }
+.result .src b { color: var(--ink); }
+#wbCanvas { width: 100%; height: auto; background: #F7F7F2; border-radius: 10px; touch-action: none; cursor: crosshair; }
+#bvCanvas { width: 100%; height: auto; border-radius: 10px; background: #FBFAF6; }
+.swatch { width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.swatch[aria-pressed="true"] { border-color: var(--ink); }
+.about ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+table.att { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.att th, table.att td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+table.att th { font-size: 12px; color: var(--muted); font-weight: 700; }
+.tablewrap { overflow-x: auto; }
+.authbox { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); }
+.authbox h2 { margin: 0; }
+.authbox .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.authform { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: end; }
+.authform label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.authform input, .authbox input { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0B1014; color: var(--ink); }
+.authform .row, .authform p { grid-column: 1 / -1; margin: 0; }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 15px; z-index: 1; }
+</style>
+</head>
+<body>
+<div id="loading">Building the classroom…</div>
+<div id="stage" aria-label="3D classroom. Drag to look around; use the arrow buttons or W A S D keys to move."></div>
+
+<!-- In-class HUD -->
+<div class="hud top" id="hudTop" hidden>
+  <div class="card ident">
+    <span class="code" id="hCode"></span>
+    <h1 id="hTitle"></h1>
+    <div class="row" id="hChips"></div>
+    <div class="row"><button class="btn alt" id="leaveBtn" type="button">Leave class</button><button class="linkbtn" id="aboutBtn2" type="button">About this demo</button></div>
+  </div>
+  <div class="navgrp">
+    <nav class="card rooms" id="rooms" aria-label="Go to a room"></nav>
+    <button class="btn alt" id="monBtn" type="button"></button>
+  </div>
+</div>
+<div class="hud card actions" id="actions" aria-live="polite" hidden>
+  <h2 class="room" id="roomName"></h2>
+  <p id="roomDesc"></p>
+  <div class="row" id="roomBtns"></div>
+  <span class="help">Drag to look around · W A S D or arrow keys to walk · Click objects to use them</span>
+</div>
+<div class="hud pad" id="pad" aria-label="Movement" hidden>
+  <button class="up" data-k="f" aria-label="Walk forward">▲</button>
+  <button class="lt" data-k="l" aria-label="Turn left">◀</button>
+  <button class="dn" data-k="b" aria-label="Walk back">▼</button>
+  <button class="rt" data-k="r" aria-label="Turn right">▶</button>
+</div>
+<aside class="hud card side" id="side" hidden><div class="panelbody" id="sideBody"></div></aside>
+<div class="hud toast" id="toast" role="status" hidden></div>
+
+<!-- Lobby -->
+<div id="lobby">
+  <div class="lob">
+    <div class="intro">
+      <span><span class="chip flag">2026 browser re-creation</span></span>
+      <h1>Interactive 3D Classroom</h1>
+      <p>Virtual learning spaces for four courses. Lecturers run live classes, put their own PDF or slides on the board and see where students are. Students join with a class code.</p>
+      <p><button class="linkbtn" id="aboutBtn" type="button">About this demo</button></p>
+    </div>
+    <div class="authbox" id="authBox" hidden></div>
+    <div class="status" id="status">Loading…</div>
+    <section id="liveSection" hidden>
+      <h2>Live classes now</h2>
+      <div class="classes" id="classList"></div>
+      <form class="joinrow" id="joinForm" style="margin-top:10px">
+        <label for="joinCode" class="muted">Have a class code?</label>
+        <input id="joinCode" type="text" maxlength="6" autocomplete="off" placeholder="e.g. K7Q2MD">
+        <button class="btn" type="submit">Join class</button>
+      </form>
+    </section>
+    <section>
+      <h2>Courses</h2>
+      <div class="courses" id="courseGrid"></div>
+    </section>
+  </div>
+</div>
+
+<!-- Sheets -->
+<div class="sheet" id="aboutSheet" hidden>
+  <div class="card about" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+    <h2 id="aboutTitle">About this demo</h2>
+    <p>A 2026 browser re-creation inspired by my BSc final-year project, <i>Interactive 3D Classroom with User Support Using Virtual Reality</i> (Federal University Oye-Ekiti, supervised by Mrs. Daramola). The original was built with Blender, Unity, Unreal Engine and Mozilla Spoke and tested with 50 students and 5 educators. Its files were not preserved.</p>
+    <p class="muted">This version is new work. The courses, rooms, models, live classes, board uploads and class monitoring were designed for this demo and are not copies of the original.</p>
+    <ul class="muted">
+      <li>Four courses, each with a lecture hall, a lab, a library and a discussion room.</li>
+      <li>Lecturers can put a PDF or slide images on the lecture-hall board; students’ boards follow the lecturer’s page.</li>
+      <li>Live classes: students join with a code; the lecturer sees each student’s room, activity, whether the class tab is open, and raised hands.</li>
+      <li>Students are told what the lecturer can see.</li>
+      <li>The simulated class preview uses made-up students to show the lecturer’s view.</li>
+    </ul>
+    <p class="muted">Joseph Okeoma · October 2026 · <a href="../" style="color:var(--accent)">All prototypes</a></p>
+    <div class="row"><button class="btn" data-close type="button">Close</button></div>
+  </div>
+</div>
+
+<div class="sheet" id="searchSheet" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
+    <h2 id="searchTitle">Ask the library</h2>
+    <p class="muted" id="searchMode">Answers come only from this course’s notes, and each answer names the notes it used.</p>
+    <form class="row" id="searchForm">
+      <input type="text" id="searchQ" aria-label="Your question" autocomplete="off">
+      <button class="btn" type="submit">Ask</button>
+    </form>
+    <div class="row" id="searchChips"></div>
+    <div id="searchOut"></div>
+    <div class="row"><button class="btn alt" data-close type="button">Close</button></div>
+  </div>
+</div>
+
+<div class="sheet" id="wbSheet" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="wbTitle">
+    <h2 id="wbTitle">Discussion whiteboard</h2>
+    <p class="muted" id="wbNote">Draw or write your answer, then put it on the board.</p>
+    <canvas id="wbCanvas" width="1024" height="512"></canvas>
+    <div class="row" id="wbTools"></div>
+    <div class="row">
+      <button class="btn" id="wbDone" type="button">Put on board</button>
+      <button class="btn alt" id="wbClear" type="button">Clear</button>
+      <button class="btn alt" data-close type="button">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="bvSheet" hidden>
+  <div class="card wide" role="dialog" aria-modal="true" aria-labelledby="bvTitle">
+    <div class="row" style="justify-content:space-between"><h2 id="bvTitle">Lecture board</h2><span class="muted" id="bvPage"></span></div>
+    <canvas id="bvCanvas" width="1280" height="720"></canvas>
+    <div class="row" id="bvCtrls"></div>
+  </div>
+</div>
+
+<div class="sheet" id="uploadSheet" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="upTitle">
+    <h2 id="upTitle">Put your material on the board</h2>
+    <p>Choose a <b>PDF</b>, or one or more <b>slide images</b> (PNG or JPG). Each page or image becomes one slide.</p>
+    <p class="muted">Using PowerPoint or Google Slides? Save or download the presentation as a PDF first (in PowerPoint: File → Save As → PDF), then upload that file.</p>
+    <p class="muted" id="upScope"></p>
+    <div class="row">
+      <label class="btn" for="fileIn" tabindex="0">Choose file</label>
+      <input id="fileIn" type="file" accept="application/pdf,image/png,image/jpeg,image/webp" multiple hidden>
+      <button class="btn alt" id="useCourseSlides" type="button">Use the course slides</button>
+      <button class="btn alt" data-close type="button">Cancel</button>
+    </div>
+    <p class="muted" id="upStatus" role="status"></p>
+  </div>
+</div>
+
+<div class="sheet" id="monSheet" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="monTitle">
+    <div class="row" style="justify-content:space-between"><h2 id="monTitle">Class</h2><button class="btn alt" data-close type="button">Close</button></div>
+    <div class="panelbody" id="monBody"></div>
+  </div>
+</div>
+
+<div class="sheet" id="attSheet" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="attTitle">
+    <h2 id="attTitle">Attendance</h2>
+    <p class="muted" id="attNote"></p>
+    <div class="tablewrap"><table class="att"><thead><tr><th>Student</th><th>First joined</th><th>Last seen</th></tr></thead><tbody id="attBody"></tbody></table></div>
+    <div class="row"><button class="btn alt" data-close type="button">Close</button></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="backend.js"></script>
+<script src="content.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

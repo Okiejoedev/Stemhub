@@ -1,0 +1,970 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Prototype that answers questions about wearable health data with grounded, layered answers.">
+<title>Wristside</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+html, body { margin: 0; } [hidden] { display: none !important; } img { max-width: 100%; }
+/* Layout: a working research tool. Question + layered answers on the left; the wrist view and the records behind the answer on the right. */
+:root {
+  --bg: #F2F4F5; --surface: #FFFFFF; --sunk: #E9EDEF; --ink: #142029; --muted: #56646E; --line: #D9E0E4; --line-strong: #C3CDD3;
+  --accent: #2346D8; --accent-ink: #FFFFFF; --accent-soft: #E3E8FB;
+  --sleep: #5A4FCF; --steps: #13865A; --rhr: #C8364F; --active: #B26A08;
+  --warn: #8F5500; --warn-soft: #FDF0D8; --gap: #7D8A94;
+  --watch-bg: #0B1014; --watch-ink: #F1F5F7; --watch-muted: #8D9BA5; --watch-rim: #2A333A;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0E1418; --surface: #162027; --sunk: #111A20; --ink: #E6EDF1; --muted: #98A7B1; --line: #26333C; --line-strong: #364550;
+  --accent: #91A6FF; --accent-ink: #0E1418; --accent-soft: #1D2747;
+  --sleep: #A29BFF; --steps: #4DC892; --rhr: #FF7F93; --active: #F0A84A;
+  --warn: #F2B95E; --warn-soft: #33270F; --gap: #74828C; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0E1418; --surface: #162027; --sunk: #111A20; --ink: #E6EDF1; --muted: #98A7B1; --line: #26333C; --line-strong: #364550;
+  --accent: #91A6FF; --accent-ink: #0E1418; --accent-soft: #1D2747;
+  --sleep: #A29BFF; --steps: #4DC892; --rhr: #FF7F93; --active: #F0A84A;
+  --warn: #F2B95E; --warn-soft: #33270F; --gap: #74828C; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; text-wrap: balance; margin: 0; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Header */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 24px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.brand h1 { font-size: clamp(30px, 4.4vw, 44px); font-weight: 700; letter-spacing: -0.02em; }
+.brand p { margin: 0; color: var(--muted); max-width: 60ch; }
+.meta { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; font-size: 14px; color: var(--muted); }
+.badge { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-size: 13px; font-weight: 700; }
+.badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+/* Main grid */
+.grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 28px; padding-top: 24px; align-items: start; }
+.side { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); display: flex; flex-direction: column; gap: 20px; }
+@media (max-width: 880px) { .grid { grid-template-columns: minmax(0, 1fr); } .side { position: static; } .meta { align-items: flex-start; } }
+
+.label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+/* Ask */
+.ask { display: flex; flex-direction: column; gap: 12px; }
+.askrow { display: flex; gap: 8px; }
+.askrow input { flex: 1; min-width: 0; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); font-size: 17px; }
+.askrow input::placeholder { color: var(--muted); }
+.btn { padding: 12px 18px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn[disabled] { opacity: .6; cursor: progress; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-q { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line-strong); background: transparent; color: var(--ink); font-size: 14px; cursor: pointer; }
+.chip-q:hover { border-color: var(--accent); color: var(--accent); }
+
+.controls { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; padding: 14px 0 4px; }
+.ctl { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 8px; font-size: 14px; cursor: pointer; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.seg button[disabled] { opacity: .45; cursor: not-allowed; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.hint { font-size: 13px; color: var(--muted); }
+
+/* Answers */
+.thread { display: flex; flex-direction: column; gap: 14px; padding-top: 12px; }
+.ans { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; cursor: pointer; min-width: 0; }
+.ans[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.ans .q { font-size: 14px; color: var(--muted); }
+.ans .q b { color: var(--ink); font-weight: 700; }
+.layer { margin: 0; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.layer .n { font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: center; border: 1px solid var(--line-strong); border-radius: 6px; line-height: 20px; }
+.layer.l1 { font-size: 19px; font-weight: 700; line-height: 1.35; }
+.layer.l1 .n { font-weight: 500; }
+.layer.l2, .layer.l3 { color: var(--ink); }
+.layer[hidden] { display: none !important; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tag { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--sunk); color: var(--muted); }
+.tag.m { color: var(--surface); font-weight: 700; }
+.tag.m.sleep { background: var(--sleep); } .tag.m.steps { background: var(--steps); } .tag.m.rhr { background: var(--rhr); } .tag.m.active { background: var(--active); }
+.basis { border-top: 1px dashed var(--line-strong); padding-top: 10px; }
+.basis summary { font-size: 13px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.basis ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.basis li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; font-size: 14px; color: var(--muted); }
+.basis li::before { content: ""; width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; background: var(--line-strong); }
+.basis li.used::before { background: var(--accent); }
+.basis li.missing::before { background: transparent; border: 1.5px dashed var(--gap); }
+.basis li.lowwear::before { background: var(--warn); }
+.basis li.compare::before { background: transparent; border: 2px solid var(--accent); }
+.basis li.interp::before { border-radius: 2px; background: var(--muted); }
+.basis li.lowwear { color: var(--warn); }
+.pending { color: var(--muted); font-style: italic; }
+.note { font-size: 13px; color: var(--warn); }
+
+/* Watch */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; min-width: 0; }
+.wristhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.wristbody { display: flex; gap: 20px; align-items: center; padding-top: 14px; flex-wrap: wrap; }
+.watch { width: 190px; max-width: 100%; aspect-ratio: 190 / 222; border-radius: 46px; background: var(--watch-rim); padding: 9px; flex: none; }
+.face { width: 100%; height: 100%; border-radius: 38px; background: var(--watch-bg); color: var(--watch-ink); padding: 20px 16px 16px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+.face .wl { font-size: 12px; color: var(--watch-muted); line-height: 1.25; }
+.face .wb { white-space: nowrap; font-family: var(--display); font-size: 36px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.face .wd { font-family: var(--mono); font-size: 12px; color: var(--watch-ink); }
+.face .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--wc, var(--watch-muted)); }
+.face svg { display: block; width: 100%; height: 30px; }
+.wristtext { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; color: var(--muted); }
+.ghost { align-self: flex-start; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line-strong); background: transparent; cursor: pointer; font-size: 14px; }
+.ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Chart */
+.charthead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.charthead h3 { font-size: 18px; }
+.chartbox { overflow-x: auto; padding-top: 8px; }
+.chartbox svg { display: block; width: 100%; min-width: 460px; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); padding-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+/* About */
+.about { margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+.about h2 { font-size: 22px; margin-bottom: 8px; }
+.about p { margin: 0 0 10px; max-width: 62ch; color: var(--ink); }
+.about ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; max-width: 62ch; }
+.about .fine { color: var(--muted); font-size: 14px; }
+@media (max-width: 760px) { .about { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: no-preference) { .ans { transition: border-color .15s, box-shadow .15s; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Wristside</h1>
+      <p>A prototype that answers questions about your own wearable data. Every number in an answer is calculated from the records, and gaps in the data are named.</p>
+    </div>
+    <div class="meta">
+      <span class="badge">Synthetic sample data: one fictional person, 28 days</span>
+      <span>Prototype by Joseph Okeoma · October 2026 · <a href="../" style="color:inherit">All prototypes</a></span>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section aria-label="Ask about the data">
+      <form class="ask" id="askForm">
+        <span class="label" id="askLabel">Ask about sleep, steps, resting heart rate or active minutes</span>
+        <div class="askrow">
+          <input id="q" type="text" autocomplete="off" aria-labelledby="askLabel" placeholder="e.g. Did I sleep less this week?">
+          <button class="btn" id="askBtn" type="submit">Ask</button>
+        </div>
+        <div class="chips" id="chips"></div>
+      </form>
+
+      <div class="controls">
+        <div class="ctl">
+          <span class="label">Answer structure</span>
+          <div class="seg" id="levelSeg" role="group" aria-label="Answer structure">
+            <button type="button" id="lv1" data-level="1" aria-pressed="false">Answer only</button>
+            <button type="button" id="lv2" data-level="2" aria-pressed="false">+ Comparison</button>
+            <button type="button" id="lv3" data-level="3" aria-pressed="true">+ Context</button>
+          </div>
+        </div>
+        <div class="ctl">
+          <span class="label">Questions read by</span>
+          <div class="seg" id="modeSeg" role="group" aria-label="Question reader">
+            <button type="button" id="mdAi" data-mode="ai" aria-pressed="false" disabled>Claude</button>
+            <button type="button" id="mdRules" data-mode="rules" aria-pressed="true">Built-in rules</button>
+          </div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="showBasis" checked> Show where numbers come from</label>
+      </div>
+      <p class="hint" id="modeHint">Checking whether Claude is available in this view…</p>
+
+      <div class="thread" id="thread" aria-live="polite"></div>
+    </section>
+
+    <aside class="side" aria-label="Wrist view and records">
+      <div class="panel">
+        <div class="wristhead">
+          <span class="label">On the wrist</span>
+          <button class="ghost" id="speakBtn" type="button" hidden>Read answer aloud</button>
+        </div>
+        <div class="wristbody">
+          <div class="watch" aria-hidden="true">
+            <div class="face" id="face">
+              <div class="wl" id="wLabel"></div>
+              <div class="wb" id="wBig"></div>
+              <svg id="wSpark" viewBox="0 0 100 30" preserveAspectRatio="none"></svg>
+              <div class="wd" id="wDelta"></div>
+            </div>
+          </div>
+          <div class="wristtext">
+            <p style="margin:0">A glance gets the answer and one comparison. The phone or voice answer can carry the full context.</p>
+            <p style="margin:0" id="wSr" class="hint"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="charthead">
+          <h3 id="chartTitle">Records behind the answer</h3>
+          <span class="hint" id="chartSub"></span>
+        </div>
+        <div class="chartbox"><svg id="chart" viewBox="0 0 560 220" role="img" aria-label="28-day chart of the metric in the selected answer"></svg></div>
+        <div class="legend" id="legend"></div>
+      </div>
+    </aside>
+  </main>
+
+  <section class="about" aria-label="About this prototype">
+    <div>
+      <h2>What this prototype tests</h2>
+      <p>Language models can now answer open questions about personal health data, but they can state numbers fluently and wrongly, and long answers don't suit a smartwatch or a quick voice exchange. Wristside separates the two jobs.</p>
+      <ol>
+        <li><b>Reading the question is separate from the numbers.</b> A language model (Claude, in the full version) or built-in rules turn the question into a query plan: metric, dates, comparison. Neither ever writes a number.</li>
+        <li><b>The page computes every number</b> from the daily records, so each figure can be traced back to the days behind it.</li>
+        <li><b>Answers come in layers:</b> the answer, then a comparison, then context. Switch the structure above to see what a glance, a voice reply or a phone screen might carry.</li>
+        <li><b>Data quality is part of the answer.</b> Days with no data or low wear time are named and, where they would distort an average, left out.</li>
+      </ol>
+    </div>
+    <div>
+      <h2>Next steps</h2>
+      <p>Compare free-form model answers with these grounded, layered answers on accuracy, time to understand and trust, first in a lab study and then in a short diary study with people's own data. A further question: can people tell when an answer is wrong?</p>
+      <p class="fine">The data here is generated for demonstration and describes no real person. This prototype does not give medical advice. If Claude is unavailable in your view, questions are read by built-in rules and the answers are computed the same way.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+// Wristside engine: synthetic data, question parsing, grounded answers.
+// Every number shown to the person is computed here from the records.
+
+const DATA_START = '2026-09-20';
+const DATA_END = '2026-10-17';
+const DAY = 86400000;
+const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const DOWL = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONL = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+
+const toD = s => new Date(s + 'T00:00:00Z');
+const iso = d => d.toISOString().slice(0, 10);
+const addDays = (s, n) => iso(new Date(toD(s).getTime() + n * DAY));
+const daysBetween = (a, b) => Math.round((toD(b) - toD(a)) / DAY) + 1;
+const fmtDate = s => { const d = toD(s); return `${DOW[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
+const fmtRange = (s, e) => {
+  if (s === e) return fmtDate(s);
+  const a = toD(s), b = toD(e);
+  if (a.getUTCMonth() === b.getUTCMonth()) return `${a.getUTCDate()}–${b.getUTCDate()} ${MON[b.getUTCMonth()]}`;
+  return `${a.getUTCDate()} ${MON[a.getUTCMonth()]} – ${b.getUTCDate()} ${MON[b.getUTCMonth()]}`;
+};
+const fmtNum = n => Math.round(n).toLocaleString('en-US');
+const fmtDur = m => { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return h ? `${h} h ${String(r).padStart(2, '0')} min` : `${r} min`; };
+const fmtDurShort = m => { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return `${h}h ${String(r).padStart(2, '0')}m`; };
+const fmtClock = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
+const ordinal = n => n + (['th','st','nd','rd'][(n % 100 - 20) % 10] || ['th','st','nd','rd'][n % 100] || 'th');
+
+// ---------- Synthetic data: one fictional person, 28 days ----------
+function rng(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function makeData() {
+  const r = rng(20261017);
+  const n = () => (r() + r() + r() - 1.5) / 1.5;
+  const out = [];
+  for (let i = 0; i < 28; i++) {
+    const date = addDays(DATA_START, i);
+    const dow = toD(date).getUTCDay();
+    const recent = i >= 21;
+    const weekend = dow === 0 || dow === 6;
+    const sleepMin = Math.round((recent ? 404 : 440) + (weekend ? 26 : 0) + n() * 20);
+    const bed = 23 * 60 + 8 + (weekend ? 34 : 0) + (recent ? 20 : 0) + Math.round(n() * 18);
+    const steps = Math.round((dow === 6 ? 10800 : dow === 0 ? 6300 : 7900) + (recent ? 650 : 0) + n() * 1200);
+    const rhr = Math.round((recent ? 65 : 62) + n() * 1.3);
+    const active = Math.max(6, Math.round(steps / 260 - 6 + n() * 5));
+    const wearH = Math.round((21.8 + r() * 1.6) * 10) / 10;
+    out.push({ date, dow, sleepMin, bed, wake: bed + sleepMin + 22, steps, rhr, active, wearH, note: null });
+  }
+  const at = d => out.find(x => x.date === d);
+  // Story details that make the data-quality features visible.
+  Object.assign(at('2026-10-03'), { sleepMin: 501, bed: 23 * 60 + 2, wake: 23 * 60 + 2 + 501 + 20 });
+  Object.assign(at('2026-10-14'), { sleepMin: 341, bed: 24 * 60 + 52, wake: 24 * 60 + 52 + 341 + 25 });
+  Object.assign(at('2026-10-12'), { sleepMin: null, bed: null, wake: null, wearH: 15.2, note: 'watch not worn overnight' });
+  Object.assign(at('2026-10-06'), { sleepMin: null, bed: null, wake: null, steps: null, rhr: null, active: null, wearH: 0, note: 'watch was charging; nothing recorded' });
+  Object.assign(at('2026-10-15'), { steps: 3140, active: 7, wearH: 9.0, note: 'watch worn for only 9 hours' });
+  return out;
+}
+
+const DATA = makeData();
+
+const METRICS = {
+  sleep: { key: 'sleep', label: 'Sleep', field: 'sleepMin', unitDay: 'night', unitDays: 'nights', wearSensitive: false,
+    fmt: fmtDur, fmtShort: fmtDurShort, same: 5, goalDefault: 420, goalFmt: v => `${fmtDur(v).replace(' 00 min', '')}`.replace(/ h$/, ' hours'),
+    more: 'more', less: 'less' },
+  steps: { key: 'steps', label: 'Steps', field: 'steps', unitDay: 'day', unitDays: 'days', wearSensitive: true,
+    fmt: v => `${fmtNum(v)} steps`, fmtShort: v => fmtNum(v), same: 0.03, goalDefault: 10000, goalFmt: v => `${fmtNum(v)} steps`,
+    more: 'more', less: 'fewer' },
+  rhr: { key: 'rhr', label: 'Resting heart rate', field: 'rhr', unitDay: 'day', unitDays: 'days', wearSensitive: false,
+    fmt: v => `${Math.round(v)} bpm`, fmtShort: v => `${Math.round(v)}`, same: 1, goalDefault: null, goalFmt: v => `${v} bpm`,
+    more: 'higher', less: 'lower' },
+  active: { key: 'active', label: 'Active minutes', field: 'active', unitDay: 'day', unitDays: 'days', wearSensitive: true,
+    fmt: v => `${Math.round(v)} active minutes`, fmtShort: v => `${Math.round(v)}m`, same: 3, goalDefault: 30, goalFmt: v => `${v} active minutes`,
+    more: 'more', less: 'fewer' },
+};
+
+const THIS_WEEK = ['2026-10-11', '2026-10-17'];
+const LAST_WEEK = ['2026-10-04', '2026-10-10'];
+const WEEK_BEFORE = ['2026-09-27', '2026-10-03'];
+const ALL = [DATA_START, DATA_END];
+
+// ---------- Built-in question parser ----------
+function lastWeekday(dayIdx) {
+  for (let i = 0; i < 7; i++) { const d = addDays(DATA_END, -i); if (toD(d).getUTCDay() === dayIdx) return d; }
+  return DATA_END;
+}
+
+function ruleParse(q) {
+  const t = ' ' + q.toLowerCase().replace(/[’']/g, "'") + ' ';
+  const plan = { understood: true, metric: null, intent: 'summary', start: null, end: null, compareStart: null, compareEnd: null,
+    direction: null, goal: null, medical: false, phrase: null };
+
+  if (/heart|bpm|pulse|\bhr\b|resting/.test(t)) plan.metric = 'rhr';
+  else if (/sleep|slept|\bnap|\bbed\b|bedtime|night/.test(t)) plan.metric = 'sleep';
+  else if (/step|walk/.test(t)) plan.metric = 'steps';
+  else if (/active|exercise|workout|activity|moving|moved/.test(t)) plan.metric = 'active';
+  if (!plan.metric) return { ...plan, understood: false };
+
+  plan.medical = /doctor|diagnos|should i (be )?worr|medic|sick|disease|normal\?|healthy\?|dangerous/.test(t);
+
+  // Period
+  let single = null;
+  const wd = DOWL.findIndex(d => t.includes(d));
+  const dm = t.match(/(\d{1,2})(st|nd|rd|th)?\s+(sep|oct)[a-z]*/) || t.match(/(sep|oct)[a-z]*\s+(\d{1,2})/);
+  if (dm) {
+    const day = Number(dm[1].match(/\d/) ? dm[1] : dm[2]);
+    const mon = /oct/.test(dm[0]) ? 10 : 9;
+    single = `2026-${String(mon).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  } else if (/last night|today|tonight/.test(t)) single = DATA_END;
+  else if (/yesterday/.test(t)) single = plan.metric === 'sleep' ? DATA_END : addDays(DATA_END, -1);
+  else if (wd >= 0) single = lastWeekday(wd);
+
+  const hasThis = /this week|past week|past 7|last 7|last seven|recent week|this past/.test(t);
+  const hasLast = /last week|previous week|week before/.test(t);
+  const hasAll = /month|4 weeks|four weeks|28 days|lately|over time|all|overall|so far|ever/.test(t);
+
+  if (single) { plan.start = plan.end = single; plan.intent = 'single_day'; }
+  else if (hasThis && hasLast) { [plan.start, plan.end] = THIS_WEEK; [plan.compareStart, plan.compareEnd] = LAST_WEEK; }
+  else if (hasLast) { [plan.start, plan.end] = LAST_WEEK; [plan.compareStart, plan.compareEnd] = WEEK_BEFORE; plan.phrase = 'last week'; }
+  else if (hasThis) { [plan.start, plan.end] = THIS_WEEK; [plan.compareStart, plan.compareEnd] = LAST_WEEK; plan.phrase = 'this week'; }
+  else if (hasAll) { [plan.start, plan.end] = ALL; }
+
+  // Intent
+  if (!single) {
+    const goalish = /goal|target|10,?000|10k|\bhit\b|reach|at least|how many (days|nights)/.test(t);
+    if (!goalish && /\b(best|worst|most|least|highest|lowest|longest|shortest|fewest|max|min|peak)\b/.test(t)) {
+      plan.intent = 'extreme';
+      const up = /\b(best|most|highest|longest|max|peak)\b/.test(t);
+      plan.direction = up ? 'max' : 'min';
+      if (plan.metric === 'rhr' && /\bbest\b/.test(t)) plan.direction = 'min';
+      if (plan.metric === 'rhr' && /\bworst\b/.test(t)) plan.direction = 'max';
+      if (!plan.start) [plan.start, plan.end] = ALL;
+    } else if (/trend|going (up|down)|increas|decreas|improv|getting (better|worse)|over time|chang|rising|dropping|falling/.test(t)) {
+      plan.intent = 'trend';
+      [plan.start, plan.end] = ALL;
+    } else if (goalish) {
+      plan.intent = 'goal';
+      const num = t.match(/(\d[\d,]*)\s*(k\b|hours|hrs|h\b|minutes|min)?/);
+      if (num) {
+        let v = Number(num[1].replace(/,/g, ''));
+        if (num[2] === 'k') v *= 1000;
+        if (plan.metric === 'sleep' && v < 24) v *= 60;
+        if (v > 0) plan.goal = v;
+      }
+    }
+  }
+  if (!plan.start) {
+    [plan.start, plan.end] = THIS_WEEK; [plan.compareStart, plan.compareEnd] = LAST_WEEK;
+    plan.phrase = plan.intent === 'summary' || plan.intent === 'goal' ? 'default-week' : plan.phrase;
+  }
+  return plan;
+}
+
+// Prompt for Claude: it only turns the question into a plan; it never sees or states numbers.
+function planPrompt(question) {
+  return `You convert a person's question about their own smartwatch data into a query plan. Do NOT answer the question and do not invent any numbers. Reply with only one JSON object.
+
+Data available: one record per day from 2026-09-20 to 2026-10-17. Today is Saturday 2026-10-17.
+Metrics:
+- "sleep": minutes asleep, stored on the date the person woke up (so "last night" = 2026-10-17)
+- "steps": steps per day
+- "rhr": resting heart rate in bpm
+- "active": active minutes per day
+
+JSON shape:
+{"understood": boolean, "metric": "sleep"|"steps"|"rhr"|"active"|null, "intent": "summary"|"single_day"|"extreme"|"trend"|"goal", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "compare_start": "YYYY-MM-DD"|null, "compare_end": "YYYY-MM-DD"|null, "direction": "max"|"min"|null, "goal": number|null, "medical_advice_requested": boolean}
+
+Rules:
+- "this week" or "past week" = 2026-10-11 to 2026-10-17, compared with 2026-10-04 to 2026-10-10.
+- "last week" = 2026-10-04 to 2026-10-10, compared with 2026-09-27 to 2026-10-03.
+- A question about one day uses intent "single_day" with start = end. For sleep, "last night" and "yesterday" mean 2026-10-17. A weekday name means the most recent such date on or before 2026-10-17.
+- "best"/"worst"/"most"/"least"/"longest"/"shortest" = intent "extreme" with direction; for resting heart rate, "best" means "min". With no period given, use the whole range.
+- "trend", "going up", "improving", "lately", "over time" = intent "trend" over the whole range.
+- "How many days did I hit/reach X" = intent "goal". goal is in the metric's unit (sleep in minutes). If no number is given use null.
+- If no period is given for a summary, use this week with its comparison.
+- If the question is not about sleep, steps, resting heart rate or active minutes, set understood to false and metric to null.
+- Set medical_advice_requested to true if the person asks whether something is normal, healthy, or whether to see a doctor.
+
+Question: ${JSON.stringify(question)}`;
+}
+
+function normalizePlan(p) {
+  if (!p || typeof p !== 'object') return null;
+  const okDate = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && s >= DATA_START && s <= DATA_END;
+  const plan = {
+    understood: p.understood !== false && !!METRICS[p.metric],
+    metric: METRICS[p.metric] ? p.metric : null,
+    intent: ['summary', 'single_day', 'extreme', 'trend', 'goal'].includes(p.intent) ? p.intent : 'summary',
+    start: okDate(p.start) ? p.start : null,
+    end: okDate(p.end) ? p.end : null,
+    compareStart: okDate(p.compare_start ?? p.compareStart) ? (p.compare_start ?? p.compareStart) : null,
+    compareEnd: okDate(p.compare_end ?? p.compareEnd) ? (p.compare_end ?? p.compareEnd) : null,
+    direction: p.direction === 'max' || p.direction === 'min' ? p.direction : null,
+    goal: Number.isFinite(Number(p.goal)) && Number(p.goal) > 0 ? Number(p.goal) : null,
+    medical: !!(p.medical_advice_requested ?? p.medical),
+    phrase: null,
+  };
+  if (!plan.understood) return plan;
+  if (!plan.start || !plan.end || plan.start > plan.end) {
+    if (plan.intent === 'trend' || plan.intent === 'extreme') [plan.start, plan.end] = ALL;
+    else { [plan.start, plan.end] = THIS_WEEK; [plan.compareStart, plan.compareEnd] = LAST_WEEK; }
+  }
+  if (plan.compareStart && (!plan.compareEnd || plan.compareStart > plan.compareEnd)) plan.compareStart = plan.compareEnd = null;
+  if (plan.start === plan.end) plan.intent = 'single_day';
+  if (plan.intent === 'extreme' && !plan.direction) plan.direction = 'max';
+  if (plan.start === THIS_WEEK[0] && plan.end === THIS_WEEK[1]) plan.phrase = 'this week';
+  if (plan.start === LAST_WEEK[0] && plan.end === LAST_WEEK[1]) plan.phrase = 'last week';
+  return plan;
+}
+
+// ---------- Executing a plan against the records ----------
+function rangeRecs(s, e) { return DATA.filter(r => r.date >= s && r.date <= e); }
+
+function collect(metricKey, s, e) {
+  const m = METRICS[metricKey];
+  const rs = rangeRecs(s, e);
+  const used = [], missing = [], lowWear = [];
+  for (const r of rs) {
+    if (r[m.field] == null) { missing.push(r); continue; }
+    if (m.wearSensitive && r.wearH < 12) { lowWear.push(r); continue; }
+    used.push(r);
+  }
+  const vals = used.map(r => r[m.field]);
+  const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  const total = vals.reduce((a, b) => a + b, 0);
+  const sorted = [...used].sort((a, b) => b[m.field] - a[m.field]);
+  return { s, e, expected: rs.length, used, missing, lowWear, avg, total, max: sorted[0] || null, min: sorted[sorted.length - 1] || null, sorted };
+}
+
+function periodWords(plan) {
+  const { start: s, end: e } = plan;
+  if (s === THIS_WEEK[0] && e === THIS_WEEK[1]) return 'over the last 7 days';
+  if (s === LAST_WEEK[0] && e === LAST_WEEK[1]) return `in the week of ${fmtRange(s, e)}`;
+  if (s === ALL[0] && e === ALL[1]) return 'over the last 4 weeks';
+  return `from ${fmtDate(s)} to ${fmtDate(e)}`;
+}
+
+function cmpWords(plan) {
+  const { compareStart: s, compareEnd: e } = plan;
+  if (s === LAST_WEEK[0] && e === LAST_WEEK[1] && plan.start === THIS_WEEK[0]) return 'the 7 days before';
+  if (s === WEEK_BEFORE[0] && e === WEEK_BEFORE[1] && plan.start === LAST_WEEK[0]) return 'the week before';
+  return fmtRange(s, e);
+}
+
+function diffSentence(m, a, b, whatB) {
+  const d = a - b;
+  const same = m.same < 1 ? Math.abs(d) < m.same * b : Math.abs(d) < m.same;
+  if (same) return `That's about the same as ${whatB} (${m.fmt(b)}).`;
+  const amt = m.key === 'sleep' ? fmtDur(Math.abs(d)) : m.key === 'steps' ? `${fmtNum(Math.abs(d))} steps` : m.key === 'rhr' ? `${Math.round(Math.abs(d))} bpm` : `${Math.round(Math.abs(d))} minutes`;
+  return `That's ${amt} ${d > 0 ? m.more : m.less} than ${whatB} (${m.fmt(b)}).`;
+}
+
+function deltaShort(m, a, b) {
+  const d = a - b;
+  const sign = d > 0 ? '+' : d < 0 ? '−' : '±';
+  const v = Math.abs(d);
+  if (m.key === 'sleep') return `${sign}${Math.round(v)}m`;
+  if (m.key === 'steps') return `${sign}${fmtNum(v)}`;
+  if (m.key === 'rhr') return `${sign}${Math.round(v)} bpm`;
+  return `${sign}${Math.round(v)}m`;
+}
+
+function dayList(rs) { return rs.map(r => fmtDate(r.date)).join(', '); }
+
+function basisFor(m, plan, c, cc, interp) {
+  const lines = [];
+  const noun = c.expected === 1 ? m.unitDay : m.unitDays;
+  if (plan.intent !== 'single_day') lines.push({ kind: 'used', text: `Based on ${c.used.length} of ${c.expected} ${noun} (${fmtRange(c.s, c.e)}).` });
+  else if (c.used.length) lines.push({ kind: 'used', text: `Based on the record for ${fmtDate(c.s)}.` });
+  for (const r of c.missing) lines.push({ kind: 'missing', text: `No ${m.label.toLowerCase()} data for ${fmtDate(r.date)}: ${r.note}.` });
+  for (const r of c.lowWear) lines.push({ kind: 'lowwear', text: `${plan.intent === 'single_day' ? 'Flagged' : 'Left out'} ${fmtDate(r.date)}: ${r.note}, so the count is too low to trust.` });
+  if (cc) {
+    let t = `Compared with ${fmtRange(cc.s, cc.e)} (${cc.used.length} of ${cc.expected} ${m.unitDays}`;
+    const gaps = [...cc.missing, ...cc.lowWear];
+    t += gaps.length ? `; no usable data for ${dayList(gaps)}).` : ').';
+    lines.push({ kind: 'compare', text: t });
+  }
+  if (interp) lines.push({ kind: 'interp', text: interp });
+  return lines;
+}
+
+function interpretation(plan) {
+  const m = METRICS[plan.metric];
+  if (plan.phrase === 'this week' || plan.phrase === 'default-week') return `Read “this week” as the last 7 days in the data (${fmtRange(...THIS_WEEK)}).`;
+  if (plan.phrase === 'last week') return `Read “last week” as ${fmtRange(...LAST_WEEK)}.`;
+  if (plan.intent === 'single_day' && plan.metric === 'sleep') return `Sleep is filed under the morning you woke up, so this is the night into ${fmtDate(plan.start)}.`;
+  if (plan.intent === 'trend') return 'Looked at weekly averages across all 4 weeks of data.';
+  if (plan.intent === 'extreme') return `Searched every ${m.unitDay} ${periodWords(plan)}.`;
+  return null;
+}
+
+function answer(planIn) {
+  const plan = { ...planIn };
+  if (!plan.understood || !plan.metric) {
+    return { ok: false, short: 'I can only answer questions about your recorded sleep, steps, resting heart rate and active minutes.',
+      comparison: '', context: 'Try one of the example questions.', basis: [], watch: null, chart: null, plan };
+  }
+  const m = METRICS[plan.metric];
+  if (plan.intent === 'goal' && !m.goalDefault && !plan.goal) plan.intent = 'summary';
+  if ((plan.intent === 'summary' || plan.intent === 'goal') && !plan.compareStart && plan.start === THIS_WEEK[0] && plan.end === THIS_WEEK[1]) {
+    [plan.compareStart, plan.compareEnd] = LAST_WEEK;
+  }
+  const c = collect(plan.metric, plan.start, plan.end);
+  const cc = plan.compareStart ? collect(plan.metric, plan.compareStart, plan.compareEnd) : null;
+  const all = collect(plan.metric, ...ALL);
+  const interp = interpretation(plan);
+  const out = { ok: true, plan, metric: plan.metric, short: '', comparison: '', context: '', basis: [], watch: {}, chart: { range: [plan.start, plan.end], cmp: cc ? [cc.s, cc.e] : null, day: null } };
+  const med = plan.medical ? ' This prototype reports your data only; it can’t tell you what is medically normal for you.' : '';
+
+  if (plan.intent === 'single_day') {
+    const r = DATA.find(x => x.date === plan.start);
+    out.chart.day = plan.start;
+    const v = r ? r[m.field] : null;
+    const isLast = plan.start === DATA_END;
+    const when = m.key === 'sleep' ? (isLast ? 'last night' : `on the night into ${fmtDate(plan.start)}`)
+      : (isLast ? `today (${fmtDate(plan.start)})` : plan.start === addDays(DATA_END, -1) ? `yesterday (${fmtDate(plan.start)})` : `on ${fmtDate(plan.start)}`);
+    if (v == null) {
+      out.short = `There's no ${m.label.toLowerCase()} data for ${m.key === 'sleep' ? 'the night into ' : ''}${fmtDate(plan.start)}.`;
+      out.comparison = '';
+      out.context = r && r.note ? `Reason recorded: ${r.note}.` : '';
+      out.watch = { big: '—', label: `${m.label} · ${fmtDate(plan.start)}`, delta: 'No data recorded' };
+    } else {
+      const verb = { sleep: `You slept ${m.fmt(v)} ${when}.`, steps: `You took ${m.fmt(v)} ${when}.`, rhr: `Your resting heart rate was ${m.fmt(v)} ${when}.`, active: `You had ${m.fmt(v)} ${when}.` }[m.key];
+      out.short = verb;
+      out.comparison = diffSentence(m, v, all.avg, `your ${m.key === 'sleep' ? 'nightly' : 'daily'} average over the last 4 weeks`);
+      const low = m.wearSensitive && r.wearH < 12;
+      if (m.key === 'sleep') out.context = `You fell asleep around ${fmtClock(r.bed)} and woke at ${fmtClock(r.wake)}.`;
+      else if (low) out.context = `The watch was worn for only ${r.wearH} hours that day, so the real figure was probably higher.`;
+      else {
+        const rank = all.sorted.findIndex(x => x.date === r.date) + 1;
+        const word = m.key === 'rhr' ? 'highest' : 'highest';
+        out.context = rank === 1 ? `That was your ${word} of the last 4 weeks.` : `It was your ${ordinal(rank)} ${word} out of ${all.used.length} ${m.unitDays} with full data.`;
+      }
+      out.watch = { big: m.fmtShort(v), label: `${m.label} · ${isLast && m.key === 'sleep' ? 'last night' : fmtDate(plan.start)}`, delta: `${deltaShort(m, v, all.avg)} vs 4-wk avg` };
+      if (low) out.basis.push({ kind: 'lowwear', text: `Flagged ${fmtDate(r.date)}: ${r.note}, so the count is too low to trust.` });
+    }
+    out.basis.unshift(...basisFor(m, plan, { ...c, lowWear: [] }, null, interp));
+    out.context += med;
+    return out;
+  }
+
+  if (!c.used.length) {
+    out.short = `There's no usable ${m.label.toLowerCase()} data ${periodWords(plan)}.`;
+    out.basis = basisFor(m, plan, c, null, interp);
+    out.watch = { big: '—', label: m.label, delta: 'No data' };
+    return out;
+  }
+
+  if (plan.intent === 'extreme') {
+    const pick = plan.direction === 'max' ? c.max : c.min;
+    const runner = plan.direction === 'max' ? c.sorted[1] : c.sorted[c.sorted.length - 2];
+    const words = {
+      sleep: { max: 'longest night of sleep', min: 'shortest night of sleep' },
+      steps: { max: 'most active day by steps', min: 'least active day by steps' },
+      rhr: { max: 'highest resting heart rate', min: 'lowest resting heart rate' },
+      active: { max: 'most active day', min: 'least active day' },
+    }[m.key][plan.direction];
+    const v = pick[m.field];
+    out.short = `Your ${words} ${periodWords(plan)} was ${m.key === 'sleep' ? 'the night into ' : ''}${fmtDate(pick.date)}: ${m.fmt(v)}.`;
+    out.comparison = diffSentence(m, v, c.avg, `your average ${m.unitDay} over the same period`);
+    out.context = runner ? `Next ${plan.direction === 'max' ? 'highest' : 'lowest'}: ${m.key === 'sleep' ? 'the night into ' : ''}${fmtDate(runner.date)} (${m.fmt(runner[m.field])}).` : '';
+    out.chart.day = pick.date;
+    out.watch = { big: m.fmtShort(v), label: `${plan.direction === 'max' ? 'Top' : 'Lowest'} · ${fmtDate(pick.date)}`, delta: `${deltaShort(m, v, c.avg)} vs avg` };
+    out.basis = basisFor(m, plan, c, null, interp);
+    out.context += med;
+    return out;
+  }
+
+  if (plan.intent === 'trend') {
+    const weeks = [0, 1, 2, 3].map(w => collect(plan.metric, addDays(DATA_START, w * 7), addDays(DATA_START, w * 7 + 6)));
+    const first = weeks[0].avg, last = weeks[3].avg;
+    const d = last - first;
+    const same = m.same < 1 ? Math.abs(d) < m.same * first : Math.abs(d) < m.same;
+    const dir = same ? 'stayed about the same' : (d > 0 ? (m.key === 'rhr' ? 'gone up' : 'gone up') : 'gone down');
+    out.short = `Your ${m.label.toLowerCase()} has ${dir} over the last 4 weeks: ${m.fmt(first)} ${m.key === 'sleep' ? 'a night' : 'a day'} in the first week, ${m.fmt(last)} in the most recent.`;
+    out.comparison = `Weekly averages: ${weeks.map(w => m.key === 'sleep' ? fmtDur(w.avg) : m.key === 'steps' ? fmtNum(w.avg) : Math.round(w.avg)).join(' → ')}${m.key === 'rhr' ? ' bpm' : m.key === 'active' ? ' min' : ''}.`;
+    let big = 1, bigD = 0;
+    for (let i = 1; i < 4; i++) { const dd = weeks[i].avg - weeks[i - 1].avg; if (Math.abs(dd) > Math.abs(bigD)) { bigD = dd; big = i; } }
+    out.context = `Most of the change came between week ${big} and week ${big + 1} (${deltaShort(m, weeks[big].avg, weeks[big - 1].avg)}).` + med;
+    out.watch = { big: m.fmtShort(last), label: `${m.label} · this week`, delta: `${deltaShort(m, last, first)} vs 4 wks ago` };
+    out.chart.weeks = weeks.map(w => [w.s, w.e]);
+    out.basis = basisFor(m, plan, c, null, interp);
+    return out;
+  }
+
+  if (plan.intent === 'goal') {
+    const g = plan.goal || m.goalDefault;
+    const hits = c.used.filter(r => r[m.field] >= g);
+    const noun = m.unitDays;
+    const gWords = m.key === 'sleep' ? `${fmtDur(g).replace(' 00 min', '').replace(' h', ' hours').replace('1 hours', '1 hour')} of sleep` : m.goalFmt(g);
+    out.short = `You reached ${gWords} on ${hits.length} of ${c.used.length} ${noun} ${periodWords(plan)}.`;
+    if (cc && cc.used.length) {
+      const h2 = cc.used.filter(r => r[m.field] >= g).length;
+      out.comparison = `In ${cmpWords(plan)}, you reached it on ${h2} of ${cc.used.length}.`;
+    }
+    const misses = c.used.filter(r => r[m.field] < g).sort((a, b) => b[m.field] - a[m.field]);
+    out.context = misses.length ? `Closest miss: ${m.key === 'sleep' ? 'the night into ' : ''}${fmtDate(misses[0].date)} (${m.fmt(misses[0][m.field])}).` : `You reached it every ${m.unitDay} with data.`;
+    out.watch = { big: `${hits.length}/${c.used.length}`, label: `${m.key === 'sleep' ? 'Nights' : 'Days'} at goal`, delta: `Goal: ${m.key === 'sleep' ? fmtDurShort(g) : fmtNum(g)}` };
+    out.basis = basisFor(m, plan, c, cc, interp);
+    out.context += med;
+    return out;
+  }
+
+  // summary
+  const per = m.key === 'sleep' ? ' a night' : m.key === 'rhr' ? '' : ' a day';
+  out.short = {
+    sleep: `You slept an average of ${m.fmt(c.avg)} a night ${periodWords(plan)}.`,
+    steps: `You averaged ${m.fmt(c.avg)} a day ${periodWords(plan)}.`,
+    rhr: `Your resting heart rate averaged ${m.fmt(c.avg)} ${periodWords(plan)}.`,
+    active: `You averaged ${m.fmt(c.avg)} a day ${periodWords(plan)}.`,
+  }[m.key];
+  if (cc && cc.used.length) out.comparison = diffSentence(m, c.avg, cc.avg, cmpWords(plan));
+  else out.comparison = diffSentence(m, c.avg, all.avg, 'your 4-week average');
+  if (m.key === 'sleep') {
+    const under = c.used.filter(r => r.sleepMin < 420).length;
+    out.context = `Your shortest night was the night into ${fmtDate(c.min.date)} (${fmtDur(c.min.sleepMin)}), and ${under} of ${c.used.length} nights were under 7 hours.`;
+  } else if (m.key === 'steps') {
+    const hits = c.used.filter(r => r.steps >= 10000).length;
+    out.context = `Your most active day was ${fmtDate(c.max.date)} (${m.fmt(c.max.steps)}), and you reached 10,000 steps on ${hits} of ${c.used.length} days.`;
+  } else if (m.key === 'rhr') {
+    out.context = `Day to day it ranged from ${c.min.rhr} to ${c.max.rhr} bpm.`;
+  } else {
+    out.context = `Your most active day was ${fmtDate(c.max.date)} (${m.fmt(c.max.active)}), and you logged ${fmtNum(c.total)} active minutes in total.`;
+  }
+  out.context += med;
+  const ref = cc && cc.used.length ? cc.avg : all.avg;
+  const wk = plan.phrase === 'this week' || plan.phrase === 'default-week';
+  const wl = { sleep: 'Avg sleep', steps: 'Avg daily steps', rhr: 'Avg resting HR', active: 'Avg active min' }[m.key];
+  out.watch = { big: m.fmtShort(c.avg), label: `${wl} · ${wk ? (m.key === 'sleep' ? 'last 7 nights' : 'last 7 days') : fmtRange(plan.start, plan.end)}`,
+    delta: `${deltaShort(m, c.avg, ref)} vs ${cc && cc.used.length ? 'week before' : '4-wk avg'}` };
+  out.basis = basisFor(m, plan, c, cc && cc.used.length ? cc : null, interp);
+  return out;
+}
+
+const Engine = { DATA, METRICS, DATA_START, DATA_END, ruleParse, planPrompt, normalizePlan, answer, fmtDate, fmtRange, fmtDur, fmtDurShort, fmtNum, addDays, toD };
+
+
+</script>
+<script>
+(function () {
+  const E = Engine;
+  const $ = id => document.getElementById(id);
+  const state = { level: 3, showBasis: true, mode: 'rules', aiAvailable: false, answers: [], sel: null, busy: false, ctl: null };
+  let sample = null;
+
+  const EXAMPLES = [
+    'How did I sleep this week?',
+    'Did I walk more than last week?',
+    'How many days did I hit 10,000 steps?',
+    'Is my resting heart rate going up?',
+    'What was my best night of sleep?',
+    'How did I sleep on Monday?',
+    'How many steps on Thursday?',
+  ];
+  const METRIC_COLOR = { sleep: '--sleep', steps: '--steps', rhr: '--rhr', active: '--active' };
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  try { const s = localStorage.getItem('wristside-level'); if (s) state.level = Math.min(3, Math.max(1, Number(s) || 3)); } catch (e) {}
+
+  // Chips
+  for (const q of EXAMPLES) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip-q'; b.textContent = q;
+    b.addEventListener('click', () => { $('q').value = q; ask(q); });
+    $('chips').append(b);
+  }
+
+  // Controls
+  function syncControls() {
+    for (const b of $('levelSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(Number(b.dataset.level) === state.level));
+    for (const b of $('modeSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode));
+  }
+  $('levelSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    state.level = Number(b.dataset.level);
+    try { localStorage.setItem('wristside-level', String(state.level)); } catch (e) {}
+    syncControls(); renderThread();
+  });
+  $('modeSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    state.mode = b.dataset.mode; syncControls(); setHint();
+  });
+  $('showBasis').addEventListener('change', e => { state.showBasis = e.target.checked; renderThread(); });
+  $('askForm').addEventListener('submit', e => { e.preventDefault(); const q = $('q').value.trim(); if (q) ask(q); });
+
+  function setHint(extra) {
+    let t;
+    if (!state.aiAvailable) t = 'In this version, built-in rules read the question. The numbers are always computed from the records.';
+    else if (state.mode === 'ai') t = 'Claude reads each question into a query plan; the page computes the answer. The first question may ask you to allow Claude.';
+    else t = 'Built-in rules read the question. Switch to Claude to try freer wording.';
+    $('modeHint').textContent = extra ? extra + ' ' + t : t;
+  }
+
+  // Ask
+  async function ask(q) {
+    if (state.busy) return;
+    const id = 'a' + Date.now();
+    const item = { id, q, res: null, by: null, pending: true, note: '' };
+    state.answers.unshift(item); state.sel = id; renderThread();
+    let plan = null, by = 'rules', note = '';
+    if (state.mode === 'ai' && sample) {
+      state.busy = true; $('askBtn').disabled = true;
+      state.ctl = new AbortController();
+      try {
+        const raw = await sample.json(E.planPrompt(q), { modelTier: 'quick', signal: state.ctl.signal });
+        const p = E.normalizePlan(raw);
+        if (p && p.understood) { plan = p; by = 'ai'; }
+        else if (p && !p.understood) { const r = E.ruleParse(q); if (r.understood) { plan = r; note = 'Claude couldn’t map this question; built-in rules did.'; } else { plan = p; by = 'ai'; } }
+      } catch (e) {
+        const code = e && e.code;
+        if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(code)) {
+          state.aiAvailable = false; state.mode = 'rules'; $('mdAi').disabled = true; syncControls(); setHint();
+          note = 'Claude isn’t allowed in this view; built-in rules read this question.';
+        } else if (code === 'rate_limited') note = 'Claude is busy right now; built-in rules read this question.';
+        else if (code !== 'cancelled') note = 'Claude couldn’t be reached; built-in rules read this question.';
+      } finally { state.busy = false; $('askBtn').disabled = false; }
+    }
+    if (!plan) plan = E.ruleParse(q);
+    item.res = E.answer(plan); item.by = by; item.note = note; item.pending = false;
+    renderThread(); renderSide();
+  }
+
+  // Rendering
+  function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+
+  function renderThread() {
+    const t = $('thread'); t.textContent = '';
+    for (const a of state.answers) {
+      const card = el('article', 'ans');
+      card.setAttribute('aria-current', String(a.id === state.sel));
+      card.tabIndex = 0;
+      const q = el('div', 'q'); q.append('You asked '); q.append(el('b', null, '“' + a.q + '”')); card.append(q);
+      if (a.pending) { card.append(el('p', 'pending', 'Reading your question…')); t.append(card); continue; }
+      const r = a.res;
+      const layers = [[r.short, 1], [r.comparison, 2], [r.context, 3]];
+      for (const [txt, n] of layers) {
+        if (!txt) continue;
+        const p = el('p', 'layer l' + n);
+        p.append(el('span', 'n', String(n)), el('span', null, txt));
+        p.hidden = n > state.level;
+        card.append(p);
+      }
+      const tags = el('div', 'tags');
+      if (r.ok) tags.append(el('span', 'tag m ' + r.metric, E.METRICS[r.metric].label));
+      tags.append(el('span', 'tag', a.by === 'ai' ? 'Question read by Claude' : 'Question read by built-in rules'));
+      card.append(tags);
+      if (a.note) card.append(el('p', 'note', a.note));
+      if (state.showBasis && r.basis && r.basis.length) {
+        const d = el('details', 'basis'); d.open = a.id === state.sel;
+        d.append(el('summary', null, 'Where these numbers come from'));
+        const ul = el('ul');
+        for (const b of r.basis) ul.append(el('li', b.kind, b.text));
+        d.append(ul); card.append(d);
+      }
+      const select = () => { if (state.sel !== a.id) { state.sel = a.id; renderThread(); renderSide(); } };
+      card.addEventListener('click', e => { if (e.target.closest('summary')) return; select(); });
+      card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(); } });
+      t.append(card);
+    }
+  }
+
+  function current() { return state.answers.find(a => a.id === state.sel && !a.pending) || state.answers.find(a => !a.pending); }
+
+  function renderSide() {
+    const a = current(); if (!a) return;
+    const r = a.res;
+    const face = $('face');
+    if (!r.ok || !r.watch) {
+      $('wLabel').textContent = 'Wristside'; $('wBig').textContent = '?'; $('wDelta').textContent = 'Ask about your data'; $('wSpark').textContent = '';
+      face.style.setProperty('--wc', css('--watch-muted'));
+      $('wSr').textContent = ''; drawChart(null); return;
+    }
+    face.style.setProperty('--wc', css(METRIC_COLOR[r.metric]));
+    $('wLabel').textContent = ''; const dot = el('span', 'dot'); $('wLabel').append(dot, r.watch.label);
+    $('wBig').textContent = r.watch.big;
+    $('wDelta').textContent = r.watch.delta;
+    $('wSr').textContent = 'Spoken: “' + [r.short, state.level >= 2 ? r.comparison : ''].filter(Boolean).join(' ') + '”';
+    drawSpark(r); drawChart(r);
+  }
+
+  function drawSpark(r) {
+    const svg = $('wSpark'); svg.textContent = '';
+    const m = E.METRICS[r.metric];
+    const [s, e] = r.chart.day ? [E.addDays(r.chart.day, -6), r.chart.day] : (r.plan.start === E.DATA_START ? [E.addDays(E.DATA_END, -13), E.DATA_END] : r.chart.range);
+    const recs = E.DATA.filter(d => d.date >= s && d.date <= e);
+    const vals = recs.map(d => d[m.field]).filter(v => v != null);
+    if (!vals.length) return;
+    const lo = r.metric === 'rhr' ? Math.min(...vals) - 2 : 0, hi = Math.max(...vals);
+    const w = 100 / recs.length;
+    recs.forEach((d, i) => {
+      const v = d[m.field];
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      const h = v == null ? 2 : Math.max(2, ((v - lo) / (hi - lo || 1)) * 28);
+      rect.setAttribute('x', (i * w + w * 0.18).toFixed(2)); rect.setAttribute('width', (w * 0.64).toFixed(2));
+      rect.setAttribute('y', (30 - h).toFixed(2)); rect.setAttribute('height', h.toFixed(2)); rect.setAttribute('rx', '1');
+      const hit = r.chart.day ? d.date === r.chart.day : true;
+      rect.setAttribute('fill', v == null ? css('--watch-rim') : hit ? css(METRIC_COLOR[r.metric]) : css('--watch-muted'));
+      svg.append(rect);
+    });
+  }
+
+  function drawChart(r) {
+    const svg = $('chart'); svg.textContent = '';
+    const NS = 'http://www.w3.org/2000/svg';
+    const mk = (tag, attrs, text) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (text != null) n.textContent = text; svg.append(n); return n; };
+    const legend = $('legend'); legend.textContent = '';
+    if (!r) { $('chartTitle').textContent = 'Records behind the answer'; $('chartSub').textContent = ''; return; }
+    const m = E.METRICS[r.metric];
+    const color = css(METRIC_COLOR[r.metric]);
+    $('chartTitle').textContent = m.label + ', all 28 days';
+    $('chartSub').textContent = E.fmtRange(E.DATA_START, E.DATA_END);
+    const W = 560, H = 220, L = 46, R = 10, T = 18, B = 34;
+    const iw = W - L - R, ih = H - T - B;
+    const n = E.DATA.length, bw = iw / n;
+    const vals = E.DATA.map(d => d[m.field]).filter(v => v != null);
+    let lo = 0, hi = Math.max(...vals), ticks;
+    if (r.metric === 'sleep') { hi = Math.ceil(hi / 60) * 60; ticks = [0, 180, 360, hi].filter((v, i, a) => a.indexOf(v) === i); }
+    else if (r.metric === 'steps') { hi = Math.ceil(hi / 4000) * 4000; ticks = [0, hi / 3, (2 * hi) / 3, hi].map(Math.round); }
+    else if (r.metric === 'active') { hi = Math.ceil(hi / 10) * 10; ticks = [0, hi / 2, hi]; }
+    else { lo = Math.floor((Math.min(...vals) - 3) / 2) * 2; hi = Math.ceil((Math.max(...vals) + 3) / 2) * 2; ticks = [lo, Math.round((lo + hi) / 2), hi]; }
+    const y = v => T + ih - ((v - lo) / (hi - lo)) * ih;
+    const tickLabel = v => r.metric === 'sleep' ? (v / 60) + ' h' : r.metric === 'steps' ? (v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + 'k' : String(v)) : String(v);
+    for (const t of ticks) {
+      mk('line', { x1: L, x2: W - R, y1: y(t), y2: y(t), stroke: css('--line'), 'stroke-width': 1 });
+      mk('text', { x: L - 8, y: y(t) + 4, 'text-anchor': 'end', 'font-size': 11, fill: css('--muted'), 'font-family': 'IBM Plex Mono, monospace' }, tickLabel(t));
+    }
+    if (r.metric === 'rhr') mk('text', { x: L - 8, y: T - 6, 'text-anchor': 'end', 'font-size': 10, fill: css('--muted') }, 'bpm');
+    const inR = (d, rg) => rg && d >= rg[0] && d <= rg[1];
+    // hatch pattern for left-out days
+    const defs = mk('defs', {});
+    const pat = document.createElementNS(NS, 'pattern');
+    pat.setAttribute('id', 'hatch'); pat.setAttribute('width', 5); pat.setAttribute('height', 5); pat.setAttribute('patternUnits', 'userSpaceOnUse'); pat.setAttribute('patternTransform', 'rotate(45)');
+    const pl = document.createElementNS(NS, 'line'); pl.setAttribute('x1', 0); pl.setAttribute('y1', 0); pl.setAttribute('x2', 0); pl.setAttribute('y2', 5); pl.setAttribute('stroke', css('--warn')); pl.setAttribute('stroke-width', 2);
+    pat.append(pl); defs.append(pat);
+    let usedSel = false, usedCmp = false, usedGap = false, usedLow = false;
+    const pts = [];
+    E.DATA.forEach((d, i) => {
+      const x = L + i * bw;
+      const v = d[m.field];
+      const sel = r.chart.day ? d.date === r.chart.day : inR(d.date, r.chart.range);
+      const cmp = !sel && inR(d.date, r.chart.cmp);
+      const low = m.wearSensitive && v != null && d.wearH < 12;
+      if (v == null) {
+        usedGap = true;
+        mk('rect', { x: x + bw * 0.2, y: y(lo) - 16, width: bw * 0.6, height: 16, fill: 'none', stroke: css('--gap'), 'stroke-dasharray': '2 2', rx: 2 });
+        if (sel) mk('text', { x: x + bw / 2, y: y(lo) - 22, 'text-anchor': 'middle', 'font-size': 10, fill: css('--muted') }, 'none');
+        return;
+      }
+      if (r.metric === 'rhr') {
+        pts.push([x + bw / 2, y(v), sel, cmp]);
+        if (sel) usedSel = true; if (cmp) usedCmp = true;
+        return;
+      }
+      const fill = low ? 'url(#hatch)' : sel ? color : cmp ? color : css('--line-strong');
+      const op = cmp && !low ? 0.38 : 1;
+      if (low) usedLow = true; else if (sel) usedSel = true; else if (cmp) usedCmp = true;
+      mk('rect', { x: x + bw * 0.16, y: y(v), width: bw * 0.68, height: y(lo) - y(v), fill, 'fill-opacity': op, rx: 2, stroke: low ? css('--warn') : 'none', 'stroke-width': low ? 1 : 0 });
+      if (r.chart.day === d.date) mk('rect', { x: x + bw * 0.04, y: y(v) - 3, width: bw * 0.92, height: y(lo) - y(v) + 3, fill: 'none', stroke: css('--ink'), 'stroke-width': 1.5, rx: 3 });
+    });
+    if (r.metric === 'rhr') {
+      mk('polyline', { points: pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '), fill: 'none', stroke: css('--line-strong'), 'stroke-width': 1.5 });
+      for (const [px, py, sel, cmp] of pts) mk('circle', { cx: px, cy: py, r: sel ? 4.5 : 3.5, fill: sel || cmp ? color : css('--surface'), 'fill-opacity': cmp ? 0.45 : 1, stroke: sel || cmp ? color : css('--line-strong'), 'stroke-width': 1.5 });
+    }
+    if (r.chart.weeks) {
+      r.chart.weeks.forEach(([s, e]) => {
+        const recs = E.DATA.filter(d => d.date >= s && d.date <= e && d[m.field] != null && !(m.wearSensitive && d.wearH < 12));
+        const avg = recs.reduce((a, d) => a + d[m.field], 0) / recs.length;
+        const i0 = E.DATA.findIndex(d => d.date === s);
+        mk('line', { x1: L + i0 * bw + 2, x2: L + (i0 + 7) * bw - 2, y1: y(avg), y2: y(avg), stroke: css('--ink'), 'stroke-width': 2.5, 'stroke-linecap': 'round' });
+      });
+    }
+    // x labels on Sundays + last day
+    E.DATA.forEach((d, i) => {
+      if (d.dow === 0 || i === n - 1) mk('text', { x: L + i * bw + bw / 2, y: H - 12, 'text-anchor': 'middle', 'font-size': 11, fill: css('--muted'), 'font-family': 'IBM Plex Mono, monospace' }, E.fmtDate(d.date).split(' ').slice(1).join(' '));
+    });
+    const add = (style, text) => { const s = el('span'); const sw = el('i', 'sw'); Object.assign(sw.style, style); s.append(sw, text); legend.append(s); };
+    if (usedSel) add({ background: color }, r.chart.day ? 'Day in the answer' : 'Days in the answer');
+    if (usedCmp) add({ background: color, opacity: .4 }, 'Comparison days');
+    if (r.chart.weeks) add({ background: css('--ink'), height: '3px' }, 'Weekly average');
+    if (usedLow) add({ background: 'transparent', border: '1.5px solid ' + css('--warn') }, 'Low wear time (left out)');
+    if (usedGap) add({ background: 'transparent', border: '1.5px dashed ' + css('--gap') }, 'No data');
+  }
+
+  // Speech (optional)
+  if ('speechSynthesis' in window && typeof SpeechSynthesisUtterance === 'function') {
+    $('speakBtn').hidden = false;
+    $('speakBtn').addEventListener('click', () => {
+      const a = current(); if (!a || !a.res) return;
+      try {
+        window.speechSynthesis.cancel();
+        const r = a.res;
+        const text = [r.short, state.level >= 2 ? r.comparison : '', state.level >= 3 ? r.context : ''].filter(Boolean).join(' ');
+        const u = new SpeechSynthesisUtterance(text); u.rate = 1;
+        window.speechSynthesis.speak(u);
+      } catch (e) { $('speakBtn').hidden = true; }
+    });
+  }
+
+  // Theme changes: redraw colours
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderSide); } catch (e) {}
+  new MutationObserver(renderSide).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // Initial state: one worked example, answered with built-in rules (no Claude call on load)
+  const first = 'How did I sleep this week?';
+  state.answers.push({ id: 'a0', q: first, res: E.answer(E.ruleParse(first)), by: 'rules', pending: false, note: '' });
+  state.sel = 'a0';
+  syncControls(); setHint(); renderThread(); renderSide();
+
+  // Claude availability
+  if (window.claude && typeof window.claude.use === 'function') {
+    window.claude.use('sample').then(async s => {
+      if (!s) { setHint(); return; }
+      let lim = null; try { lim = await s.limits(); } catch (e) {}
+      sample = s; state.aiAvailable = true; $('mdAi').disabled = false; state.mode = 'ai'; syncControls(); setHint();
+    }).catch(() => setHint());
+  } else setHint();
+})();
+</script>
+<script>if (!(window.claude && window.claude.use)) { var b = document.getElementById("mdAi"); if (b) b.hidden = true; }</script>
+</body>
+</html>

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Prototypes by Joseph Okeoma: a 3D virtual classroom and a grounded question-answering interface for wearable health data.">
+<title>Joseph Okeoma · Prototypes</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,700&display=swap">
+<style>
+/* Layout: a short index page; two project entries stacked, each with what it is and what it shows. */
+:root {
+  --bg: #F3F4F1; --surface: #FFFFFF; --ink: #17212A; --muted: #56636D; --line: #DCE0DA; --accent: #2346D8; --accent-2: #B8860B;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #10161B; --surface: #172028; --ink: #E7EDF1; --muted: #9AA8B2; --line: #27333C; --accent: #91A6FF; --accent-2: #F4B740; color-scheme: dark } }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.55; }
+main { max-width: 820px; margin: 0 auto; padding-block: 56px 64px; padding-left: max(18px, env(safe-area-inset-left, 0px)); padding-right: max(18px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 36px; }
+h1, h2 { font-family: var(--display); line-height: 1.1; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(32px, 6vw, 48px); letter-spacing: -0.02em; }
+h2 { font-size: 26px; }
+p { margin: 0; max-width: 64ch; }
+.muted { color: var(--muted); }
+header { display: flex; flex-direction: column; gap: 12px; }
+.proj { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+.tag { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-2); }
+ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; max-width: 64ch; }
+.open { align-self: flex-start; display: inline-block; margin-top: 4px; padding: 10px 18px; border-radius: 10px; background: var(--accent); color: var(--surface); font-weight: 700; text-decoration: none; }
+.open:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+footer { font-size: 14px; color: var(--muted); }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Joseph Okeoma · Prototypes</h1>
+    <p class="muted">Two working prototypes, built in October 2026. Both run in the browser on a laptop or phone, with no sign-in needed to try them.</p>
+  </header>
+
+  <article class="proj">
+    <span class="tag">Personal health informatics</span>
+    <h2>Wristside</h2>
+    <p>Answers questions about a person’s own wearable data, such as “How did I sleep this week?”, with every number calculated from the records and gaps in the data named.</p>
+    <ul>
+      <li>Layered answers: the answer, then a comparison, then context.</li>
+      <li>A smartwatch view of the short answer, and a read-aloud option.</li>
+      <li>A chart and a list of the records behind each answer.</li>
+      <li>Uses generated sample data for one fictional person.</li>
+    </ul>
+    <a class="open" href="wristside/">Open Wristside</a>
+  </article>
+
+  <article class="proj">
+    <span class="tag">Learning technology · 3D interfaces</span>
+    <h2>Interactive 3D Classroom</h2>
+    <p>A browser re-creation inspired by my 2023 BSc final-year VR classroom (Federal University Oye-Ekiti), whose original files were not preserved. The rooms, models and live-class features here are new work.</p>
+    <ul>
+      <li>Four courses, each with a lecture hall, a lab with a 3D model, a library and a discussion room.</li>
+      <li>Lecturers can put a PDF or slide images on the board.</li>
+      <li>Live classes with join codes and a lecturer view of where students are and what they are doing; students are told what the lecturer can see.</li>
+      <li>A simulated class preview shows the lecturer’s view with made-up students.</li>
+    </ul>
+    <a class="open" href="classroom/">Open the classroom</a>
+  </article>
+
+  <footer>Joseph Okeoma · Lagos, Nigeria · <a href="mailto:josephokeoma07@gmail.com">josephokeoma07@gmail.com</a></footer>
+</main>
+</body>
+</html>
